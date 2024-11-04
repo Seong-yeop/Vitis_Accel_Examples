@@ -10,6 +10,7 @@ emconfig.json
 xmltmp
 dltmp*
 runtime/
+*.run
 *.log
 xclbin/
 lib/

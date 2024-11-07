@@ -13,6 +13,8 @@
 * License for the specific language governing permissions and limitations
 * under the License.
 */
+// Read -> Write Stream.
+
 
 #include "xcl2.hpp"
 #include "cmdlineparser.h"
@@ -31,7 +33,7 @@
 #include <iosfwd>
 #include <unistd.h>
 
-
+#define QUEUE_SIZE (4096)
 
 int main(int argc, char* argv[]) {
     // Command Line Parser
@@ -41,16 +43,14 @@ int main(int argc, char* argv[]) {
     //**************//"<Full Arg>",  "<Short Arg>", "<Description>", "<Default>"
     parser.addSwitch("--xclbin_file", "-x", "input binary file string", "");
     parser.addSwitch("--device_id", "-d", "device index", "0");
-    parser.addSwitch("--file_path", "-p", "file path string", "");
     parser.parse(argc, argv);
 
     // Read settings
     std::string binaryFile = parser.value("xclbin_file");
     int device_index = stoi(parser.value("device_id"));
-    std::string filepath = parser.value("file_path");
-    std::string filename;
+    
 
-    if (argc < 5) {
+    if (argc < 3) {
         parser.printHelp();
         return EXIT_FAILURE;
     }
@@ -66,19 +66,14 @@ int main(int argc, char* argv[]) {
     auto krnl_read = xrt::kernel(device, uuid, "read_bandwidth");
     auto krnl_write = xrt::kernel(device, uuid, "write_bandwidth");
 
-    if (filepath.empty()) {
-	filename = parser.value("input_file");
-    } else {
-	std::cout << "\nWARNING: Ignoring -f option when -p options is set. -p has high precedence over -f.\n";
-	filename = filepath;
-    }							    
-
+    xrt::bo::flags flags = xrt::bo::flags::host_only;
+	xrt::bo::flags device_flags = xrt::bo::flags::device_only;
 
     double concurrent_max = 0;
     double read_max = 0;
     double write_max = 0;
 
-    for (size_t i = 4 * 1024; i <= 64 * 1024 * 1024; i *= 2) {
+    for (size_t i = 4096; i <= 32 * 1024 * 1024; i *= 2) {
         size_t iter = (64 * 1024 * 1024) / i;
         size_t bufsize = i;
 
@@ -99,9 +94,7 @@ int main(int argc, char* argv[]) {
             input_host[i] = i % 256;
         }
 
-        xrt::bo::flags flags = xrt::bo::flags::host_only;
-	    xrt::bo::flags device_flags = xrt::bo::flags::device_only;
-	
+    
         auto hostonly_bo_in = xrt::bo(device, bufsize, flags, krnl.group_id(0));
         auto hostonly_bo_out = xrt::bo(device, bufsize, flags, krnl.group_id(1));
 
@@ -124,8 +117,23 @@ int main(int argc, char* argv[]) {
         }
 
         auto start = std::chrono::high_resolution_clock::now();
-        auto run = krnl(hostonly_bo_in, deviceonly_bo, bufsize, iter);
+        auto run = xrt::run(krnl_read);
+        auto run2 = xrt::run(krnl_write);
+
+        run.set_arg(0, hostonly_bo_in);
+        run.set_arg(2, bufsize);
+        run.set_arg(3, iter);
+
+        run2.set_arg(1, hostonly_bo_out);
+        run2.set_arg(2, bufsize);
+        run2.set_arg(3, iter);
+
+        run.start();
+        run2.start();        
+
         run.wait();
+        run2.wait();        
+
         auto end = std::chrono::high_resolution_clock::now();
         double duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
         double msduration = duration / iter;
@@ -133,22 +141,23 @@ int main(int argc, char* argv[]) {
         double bpersec = (dbytes / dsduration);
         double gbpersec = (bpersec) / ((double)1024 * 1024 * 1024); // For Concurrent Read and Write
 
-        std::cout << "Host -> FPGA throughput " << gbpersec << " (GB/sec) for buffer size " << size_str
+        std::cout << "Host -> FPGA -> Host throughput " << 2 * gbpersec << " (GB/sec) for buffer size " << size_str
 		<< std::endl;
 
+        // Validate our results
+        if (std::memcmp(bo_out_map, bo_in_map, bufsize))
+           throw std::runtime_error("Value read back does not match reference");
+	
+        continue;
         start = std::chrono::high_resolution_clock::now();
-        run = krnl(deviceonly_bo, hostonly_bo_out, bufsize, iter);
-	    run.wait();
+
         end = std::chrono::high_resolution_clock::now();
         duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
         msduration = duration / iter;
         dsduration = msduration / ((double)1000000);
         bpersec = (dbytes / dsduration);
         gbpersec = (bpersec) / ((double)1024 * 1024 * 1024); // For Concurrent Read and Write
-        // Validate our results
-        if (std::memcmp(bo_out_map, bo_in_map, bufsize))
-            throw std::runtime_error("Value read back does not match reference");
-	
+
         /* Profiling information */
 
         std::cout << "FPGA -> Host throughput " << gbpersec << " (GB/sec) for buffer size " << size_str
@@ -158,43 +167,11 @@ int main(int argc, char* argv[]) {
             concurrent_max = gbpersec;
         }
 
+
+        free(input_host);
+
 	    continue;
 
-        start = std::chrono::high_resolution_clock::now();
-        auto run_read = krnl_read(hostonly_bo_in, bufsize, iter);
-        run_read.wait();
-        end = std::chrono::high_resolution_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        msduration = duration / iter;
-
-        /* Profiling information */
-        dsduration = msduration / ((double)1000000);
-        bpersec = (dbytes / dsduration);
-        gbpersec = (bpersec) / ((double)1024 * 1024 * 1024);
-
-        std::cout << "Read Throughput = " << gbpersec << " (GB/sec) for buffer size " << size_str << std::endl;
-
-        if (gbpersec > read_max) {
-            read_max = gbpersec;
-        }
-
-        start = std::chrono::high_resolution_clock::now();
-        auto run_write = krnl_write(hostonly_bo_out, bufsize, iter);
-        run_write.wait();
-        end = std::chrono::high_resolution_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        msduration = duration / iter;
-
-        /* Profiling information */
-        dsduration = msduration / ((double)1000000);
-        bpersec = (dbytes / dsduration);
-        gbpersec = (bpersec) / ((double)1024 * 1024 * 1024);
-
-        std::cout << "Write Throughput = " << gbpersec << " (GB/sec) for buffer size " << size_str << "\n\n";
-
-        if (gbpersec > write_max) {
-            write_max = gbpersec;
-        }
     }
 
     std::cout << "Maximum bandwidth achieved :\n";
@@ -204,3 +181,4 @@ int main(int argc, char* argv[]) {
     std::cout << "TEST PASSED\n";
     return EXIT_SUCCESS;
 }
+ 

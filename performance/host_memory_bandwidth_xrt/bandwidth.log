@@ -1,0 +1,17 @@
+root@gpu2:/home/heejae/data_plane/performance/host_memory_bandwidth_xrt# ./host_memory_bandwidth_xrt -x build_dir.hw.xilinx_u250_gen3x16_xdma_4_1_202210_1/bandwidth.xclbin
+Open the device0
+Load the xclbin build_dir.hw.xilinx_u250_gen3x16_xdma_4_1_202210_1/bandwidth.xclbin
+Host -> FPGA -> Host throughput 7.0371 (GB/sec) for buffer size 4.00 KB
+Host -> FPGA -> Host throughput 7.43649 (GB/sec) for buffer size 8.00 KB
+Host -> FPGA -> Host throughput 10.7935 (GB/sec) for buffer size 16.00 KB
+Host -> FPGA -> Host throughput 12.4913 (GB/sec) for buffer size 32.00 KB
+Host -> FPGA -> Host throughput 15.9398 (GB/sec) for buffer size 64.00 KB
+Host -> FPGA -> Host throughput 18.6206 (GB/sec) for buffer size 128.00 KB
+Host -> FPGA -> Host throughput 20.4315 (GB/sec) for buffer size 256.00 KB
+Host -> FPGA -> Host throughput 21.5666 (GB/sec) for buffer size 512.00 KB
+Host -> FPGA -> Host throughput 22.0653 (GB/sec) for buffer size 1.00 MB
+Host -> FPGA -> Host throughput 22.4942 (GB/sec) for buffer size 2.00 MB
+Host -> FPGA -> Host throughput 22.5795 (GB/sec) for buffer size 4.00 MB
+Host -> FPGA -> Host throughput 22.2896 (GB/sec) for buffer size 8.00 MB
+Host -> FPGA -> Host throughput 22.3095 (GB/sec) for buffer size 16.00 MB
+Host -> FPGA -> Host throughput 22.1867 (GB/sec) for buffer size 32.00 MB

@@ -35,7 +35,7 @@
 
 #define QUEUE_SIZE (4096)
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[]) { 
     // Command Line Parser
     sda::utils::CmdLineParser parser;
 
@@ -43,19 +43,21 @@ int main(int argc, char* argv[]) {
     //**************//"<Full Arg>",  "<Short Arg>", "<Description>", "<Default>"
     parser.addSwitch("--xclbin_file", "-x", "input binary file string", "");
     parser.addSwitch("--device_id", "-d", "device index", "0");
-    parser.parse(argc, argv);
+    parser.addSwitch("--file_path", "-p", "file path string", "");
+    parser.addSwitch("--input_file", "-f", "input file string", "");
+    parser.parse(argc, argv);    
 
     // Read settings
     std::string binaryFile = parser.value("xclbin_file");
     int device_index = stoi(parser.value("device_id"));
-    
+    std::string filepath = parser.value("file_path");
+    std::string filename;
 
-    if (argc < 3) {
+    if (argc < 5) {
         parser.printHelp();
         return EXIT_FAILURE;
     }
-    
-
+   
     std::cout << "Open the device" << device_index << std::endl;
     auto device = xrt::device(device_index);
 
@@ -67,13 +69,33 @@ int main(int argc, char* argv[]) {
     auto krnl_write = xrt::kernel(device, uuid, "write_bandwidth");
 
     xrt::bo::flags flags = xrt::bo::flags::host_only;
-	xrt::bo::flags device_flags = xrt::bo::flags::device_only;
+	
+    if (filepath.empty()) {
+        std::cout << "\nWARNING: As file path is not provided using -p option, going with -f option which is local "
+                     "file testing. Please use -p option, if looking for actual p2p operation on NVMe drive.\n";
+        filename = parser.value("input_file");
+    } else {
+        std::cout << "\nWARNING: Ignoring -f option when -p options is set. -p has high precedence over -f.\n";
+        filename = filepath;
+    }
+
+    int nvmeFd = -1;
+
+    // Get access to the NVMe SSD.
+    nvmeFd = open(filename.c_str(), O_RDWR | O_DIRECT);
+
+    if (nvmeFd < 0) {
+        std::cerr << "ERROR: open " << filename << "failed: " << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    std::cout << "INFO: Successfully opened NVME SSD " << filename << std::endl;
+
+    xrt::bo::flags p2p_flags = xrt::bo::flags::p2p;
 
     double concurrent_max = 0;
-    double read_max = 0;
-    double write_max = 0;
-
-    for (size_t i = 4096; i <= 32 * 1024 * 1024; i *= 2) {
+    
+    for (size_t i = 4 * 1024; i <= 32 * 1024 * 1024; i *= 2) {
         size_t iter = (64 * 1024 * 1024) / i;
         size_t bufsize = i;
 
@@ -82,26 +104,10 @@ int main(int argc, char* argv[]) {
             if (bufsize > 8 * 1024) break;
         }
 
-        /* Input buffer */
-        unsigned char* input_host = ((unsigned char*)malloc(bufsize));
-        if (input_host == NULL) {
-            std::cout << "Error: Failed to allocate host side copy of "
-                      << "buffer of size " << bufsize << std::endl;
-            return EXIT_FAILURE;
-        }
-
-        for (size_t i = 0; i < bufsize; i++) {
-            input_host[i] = i % 256;
-        }
-
     
-        auto hostonly_bo_in = xrt::bo(device, bufsize, flags, krnl.group_id(0));
-        auto hostonly_bo_out = xrt::bo(device, bufsize, flags, krnl.group_id(1));
+        auto hostonly_bo_in = xrt::bo(device, bufsize, p2p_flags, krnl_read.group_id(0));
+        auto hostonly_bo_out = xrt::bo(device, bufsize, flags, krnl_write.group_id(1));
 
-        auto deviceonly_bo = xrt::bo(device, bufsize, device_flags, krnl.group_id(1));
-
-
-        double dbytes = bufsize;
         std::string size_str = xcl::convert_size(bufsize);
 
         // Map the contents of the buffer object into host memory
@@ -111,22 +117,44 @@ int main(int argc, char* argv[]) {
         std::fill(bo_in_map, bo_in_map + bufsize, 0);
         std::fill(bo_out_map, bo_out_map + bufsize, 0);
 
-        // Create the test data
-        for (size_t i = 0; i < bufsize; ++i) {
-            bo_in_map[i] = input_host[i];
-        }
-
         auto start = std::chrono::high_resolution_clock::now();
+        // Read From NVMe SSD to Device Buffers
+        if (pread(nvmeFd, (void*)bo_in_map, bufsize, 0) <= 0) {
+            std::cerr << "ERR: pread failed: "
+                    << " error: " << strerror(errno) << std::endl;
+            exit(EXIT_FAILURE);
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        double duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        double msduration = duration;
+        double dsduration = msduration / ((double)1000000);
+        double bpersec = (bufsize / dsduration);
+        double gbpersec = (bpersec) / ((double)1024 * 1024 * 1024); // For Concurrent Read and Write
+
+        std::cout << "Pread throughput " << gbpersec << " (GB/sec) for buffer size " << size_str
+		<< std::endl;
+
+        int64_t index_start = 0; // Start
+        int64_t index_end = bufsize / 64; // Full Size
+        int64_t memcpy_start = (index_start) * 64; 
+        int64_t memcpy_size = (index_end - index_start) * 64; 
+
+        start = std::chrono::high_resolution_clock::now();
         auto run = xrt::run(krnl_read);
         auto run2 = xrt::run(krnl_write);
 
         run.set_arg(0, hostonly_bo_in);
         run.set_arg(2, bufsize);
         run.set_arg(3, iter);
+        run.set_arg(4, index_start);
+        run.set_arg(5, index_end);
 
         run2.set_arg(1, hostonly_bo_out);
         run2.set_arg(2, bufsize);
         run2.set_arg(3, iter);
+        run2.set_arg(4, index_start);
+        run2.set_arg(5, index_end);
+
 
         run.start();
         run2.start();        
@@ -134,50 +162,28 @@ int main(int argc, char* argv[]) {
         run.wait();
         run2.wait();        
 
-        auto end = std::chrono::high_resolution_clock::now();
-        double duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        double msduration = duration / iter;
-        double dsduration = msduration / ((double)1000000);
-        double bpersec = (dbytes / dsduration);
-        double gbpersec = (bpersec) / ((double)1024 * 1024 * 1024); // For Concurrent Read and Write
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        msduration = duration / iter;
+        dsduration = msduration / ((double)1000000);
+        bpersec = (memcpy_size / dsduration);
+        gbpersec = (bpersec) / ((double)1024 * 1024 * 1024); // For Concurrent Read and Write
 
         std::cout << "Host -> FPGA -> Host throughput " << 2 * gbpersec << " (GB/sec) for buffer size " << size_str
 		<< std::endl;
 
         // Validate our results
-        if (std::memcmp(bo_out_map, bo_in_map, bufsize))
+        if (std::memcmp(bo_out_map + memcpy_start, bo_in_map + memcpy_start, memcpy_size))
            throw std::runtime_error("Value read back does not match reference");
 	
-        continue;
-        start = std::chrono::high_resolution_clock::now();
+        if (2 * gbpersec > concurrent_max) {
+            concurrent_max = 2 * gbpersec;
 
-        end = std::chrono::high_resolution_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        msduration = duration / iter;
-        dsduration = msduration / ((double)1000000);
-        bpersec = (dbytes / dsduration);
-        gbpersec = (bpersec) / ((double)1024 * 1024 * 1024); // For Concurrent Read and Write
-
-        /* Profiling information */
-
-        std::cout << "FPGA -> Host throughput " << gbpersec << " (GB/sec) for buffer size " << size_str
-        		<< std::endl;
-
-        if (gbpersec > concurrent_max) {
-            concurrent_max = gbpersec;
         }
-
-
-        free(input_host);
-
-	    continue;
-
     }
 
     std::cout << "Maximum bandwidth achieved :\n";
     std::cout << "Concurrent Read and Write Throughput = " << concurrent_max << " (GB/sec) \n";
-//    std::cout << "Read Throughput = " << read_max << " (GB/sec) \n";
-//    std::cout << "Write Throughput = " << write_max << " (GB/sec) \n\n";
     std::cout << "TEST PASSED\n";
     return EXIT_SUCCESS;
 }

@@ -52,7 +52,7 @@ LINK_OUTPUT := $(BUILD_DIR)/bandwidth.link.xclbin
 PACKAGE_OUT = ./package.$(TARGET)
 
 VPP_PFLAGS := 
-CMD_ARGS = -x $(BUILD_DIR)/bandwidth.xclbin
+CMD_ARGS = -x $(BUILD_DIR)/bandwidth.xclbin -p /dev/nvme0n1
 include config.mk
 
 CXXFLAGS += -I$(XILINX_XRT)/include -I$(XILINX_VIVADO)/include -Wall -O0 -g -std=c++1y

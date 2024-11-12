@@ -10,7 +10,7 @@ auto constexpr c_burstLength = c_maxBurstSize / c_widthInBytes;
 using TYPE = ap_uint<DATA_WIDTH>;
 
 extern "C" {
-void write_bandwidth(hls::stream<TYPE>& in, TYPE* output0, int64_t buf_size, int64_t iter) {
+void write_bandwidth(hls::stream<TYPE>& in, TYPE* output0, int64_t buf_size, int64_t iter, int64_t index_start, int64_t index_end) {
 #pragma HLS INTERFACE axis port = in
 #pragma HLS INTERFACE m_axi port = output0 offset = slave bundle = gmem max_write_burst_length = \
     64 num_write_outstanding = 16
@@ -18,6 +18,9 @@ void write_bandwidth(hls::stream<TYPE>& in, TYPE* output0, int64_t buf_size, int
 #pragma HLS INTERFACE s_axilite port = buf_size
 #pragma HLS INTERFACE s_axilite port = iter
 #pragma HLS INTERFACE s_axilite port = return
+#pragma HLS INTERFACE s_axilite port = index_start
+#pragma HLS INTERFACE s_axilite port = index_end
+
 
     uint32_t factor = buf_size / c_maxBurstSize;
     uint32_t Indx = 0;
@@ -40,7 +43,7 @@ void write_bandwidth(hls::stream<TYPE>& in, TYPE* output0, int64_t buf_size, int
     bandwidth_large_1:
         for (int64_t i = 0; i < iter; i++) {
         bandwidth_large_2:
-            for (int64_t blockindex = 0; blockindex < buf_size; blockindex++) {
+            for (int64_t blockindex = index_start; blockindex < index_end; blockindex++) {
                 // Read data from the stream and write it to output0
                 TYPE data = in.read();
                 output0[blockindex] = data;

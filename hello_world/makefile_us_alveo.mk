@@ -1,20 +1,3 @@
-#
-# Copyright 2019-2021 Xilinx, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# makefile-generator v1.0.3
-#
-
 ############################## Help Section ##############################
 ifneq ($(findstring Makefile, $(MAKEFILE_LIST)), Makefile)
 help:
@@ -30,6 +13,9 @@ help:
 	$(ECHO) ""
 	$(ECHO) "  make host"
 	$(ECHO) "      Command to build host application."
+	$(ECHO) ""
+	$(ECHO) "  make csim"
+	$(ECHO) "      Command to run C simulation (CSIM) for testbench validation."
 	$(ECHO) ""
 	$(ECHO) "  make clean "
 	$(ECHO) "      Command to remove the generated non-hardware files."
@@ -72,12 +58,18 @@ LDFLAGS += -luuid -lxrt_coreutil
 # Kernel compiler global settings
 VPP_FLAGS += --save-temps 
 
-
 EXECUTABLE = ./hello_world_xrt
 EMCONFIG_DIR = $(TEMP_DIR)
 
+############################## Setting up CSIM Variables ##############################
+CSIM_SRCS = ./src/process_request.cpp ./src/testbench.cpp
+CSIM_EXEC = ./csim_executable
+
+CSIM_FLAGS = -I$(XILINX_HLS)/include -I$(XILINX_XRT)/include -I$(XILINX_VIVADO)/include -std=c++11 -Wall -O0 -g
+CSIM_LDFLAGS = -lrt -lstdc++
+
 ############################## Setting Targets ##############################
-.PHONY: all clean cleanall docs emconfig
+.PHONY: all clean cleanall docs emconfig csim
 all: check-platform check-device check-vitis $(EXECUTABLE) $(BUILD_DIR)/process_request.xclbin emconfig
 
 .PHONY: host
@@ -88,6 +80,16 @@ build: check-vitis check-device $(BUILD_DIR)/process_request.xclbin
 
 .PHONY: xclbin
 xclbin: build
+
+############################## CSIM Target ##############################
+# Compile and run the testbench for C simulation
+csim: $(CSIM_EXEC)
+	@echo "Running C Simulation (CSIM)..."
+	./$(CSIM_EXEC)
+
+# Rule to build the CSIM executable
+$(CSIM_EXEC): $(CSIM_SRCS)
+	$(CXX) -o $@ $^ $(CSIM_FLAGS) $(CSIM_LDFLAGS)
 
 ############################## Setting Rules for Binary Containers (Building Kernels) ##############################
 $(TEMP_DIR)/process_request.xo: src/process_request.cpp
@@ -133,11 +135,10 @@ endif
 ############################## Cleaning Rules ##############################
 # Cleaning stuff
 clean:
-	-$(RMDIR) $(EXECUTABLE) $(XCLBIN)/{*hw_emu*} 
+	-$(RMDIR) $(EXECUTABLE) $(CSIM_EXEC) $(XCLBIN)/{*hw_emu*} 
 	-$(RMDIR) profile_* TempConfig system_estimate.xtxt *.rpt *.csv 
 	-$(RMDIR) src/*.ll *v++* .Xil emconfig.json dltmp* xmltmp* *.log *.jou *.wcfg *.wdb
 
 cleanall: clean
 	-$(RMDIR) build_dir*
 	-$(RMDIR) package.*
-	-$(RMDIR) _x* *xclbin.run_summary qemu-memory-_* emulation _vimage pl* start_simulation.sh *.xclbin

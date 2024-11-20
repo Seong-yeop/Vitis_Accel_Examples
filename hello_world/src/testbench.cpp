@@ -12,6 +12,7 @@ int main() {
     struct rx_packet_host txq_addresses[QUEUE_SIZE] = {0};
 
     char rx_buffer[QUEUE_SIZE * PACKET_SIZE] = {0};
+    char tx_buffer[QUEUE_SIZE * PACKET_SIZE] = {0};
 
     for (int i = 0; i < 10; i++) {
         struct rx_packet_host *packet = &rxq_addresses[i];
@@ -19,12 +20,12 @@ int main() {
 
     // 테스트용 레지스터 초기화
     uint32_t rx_head = 0;
-    uint32_t rx_tail = 1;
+    uint32_t rx_tail = 0;
     uint32_t tx_head = 0;
     uint32_t tx_tail = 0;
 
     // `process_request` 함수 호출
-    process_request((char*)rxq_addresses, rx_buffer, (char*)txq_addresses, &rx_head, &rx_tail, &tx_head, &tx_tail);
+    process_request((char*)rxq_addresses, rx_buffer, (char*)txq_addresses, tx_buffer, &rx_head, &rx_tail, &tx_head, &tx_tail);
 
     // 결과 확인
     std::cout << "rx_head: " << rx_head << std::endl;
@@ -55,13 +56,15 @@ int main() {
     } else {
         std::cout << "Test failed!" << std::endl;
     }
-
-    for (uint16_t i = 0; i < 10; i++) {
-        char tx_test_data[PACKET_SIZE] = {5, 6, 7, 8, 9, 1, 2, 3, 4, 5, 6, 7};
+    
+    for (int i = 0; i <10; i++) {
         txq_addresses[i].session_id = i;
-        txq_addresses[i].length = i;
-        tx_tail+= 1;
-        send_kernel((char*)txq_addresses, tx_test_data, &tx_head, &tx_tail);
+        txq_addresses[i].length = 1;
+        tx_buffer[1500*i] = 65;
+        tx_tail = (tx_tail + 1) % QUEUE_SIZE;
     }
+
+    process_request((char*)rxq_addresses, rx_buffer, (char*)txq_addresses, tx_buffer, &rx_head, &rx_tail, &tx_head, &tx_tail);
+
     return 0;
 }

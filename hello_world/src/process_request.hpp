@@ -24,6 +24,7 @@ extern "C" {
     void process_request(char* rxq_addresses, 
                          char* rx_buffer,
                          char* txq_addresses,
+                         char* tx_buffer,
                          uint32_t* rx_head, 
                          uint32_t* rx_tail, 
                          uint32_t* tx_head, 

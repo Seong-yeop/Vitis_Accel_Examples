@@ -156,11 +156,35 @@ void update_rx_head_stream(uint32_t* rx_head, hls::stream<uint32_t>& rx_head_str
     }
 }
 
+void tx_handler(char *txq_addresses,
+                char *data,
+                uint32_t* tx_head,
+                uint32_t* tx_tail) 
+{
+    printf("tx_handler\n");
+    // Read from txq_addresses
+    printf("tx_head: %d, tx_tail: %d\n", *tx_head, *tx_tail);
+    for (uint32_t i = *tx_head; i < *tx_tail; i++) {
+        // #pragma HLS PIPELINE
+        uint16_t session_id = *(uint16_t*)&txq_addresses[i*4];
+        uint16_t length = *(uint16_t*)&txq_addresses[i*4 + 2];
+        printf("session_id: %d, length: %d\n", session_id, length);
+        // Process or send the data
+        for (int i = 0; i < length; i++) {
+            char tmp = data[1500* (*tx_head) + i];
+            printf("%c", tmp);
+        }
+        printf("\n");
+        *tx_head = (*tx_head + 1) % QUEUE_SIZE;
+    }
+}
+
 
 extern "C" {
 void process_request(char* rxq_addresses, 
         char* rx_buffer,
         char* txq_addresses,
+        char* tx_buffer,
         uint32_t* rx_head, 
         uint32_t* rx_tail, 
         uint32_t* tx_head, 
@@ -169,6 +193,7 @@ void process_request(char* rxq_addresses,
     #pragma HLS INTERFACE mode=m_axi port=rxq_addresses bundle=gmem0 offset=slave max_read_burst_length=64
     #pragma HLS INTERFACE mode=m_axi port=rx_buffer bundle=gmem0 offset=slave max_read_burst_length=64
     #pragma HLS INTERFACE mode=m_axi port=txq_addresses bundle=gmem1 offset=slave max_write_burst_length=64
+    #pragma HLS INTERFACE mode=m_axi port=tx_buffer bundle=gmem1 offset=slave max_write_burst_length=64
     #pragma HLS INTERFACE mode=s_axilite port=rx_head 
     #pragma HLS INTERFACE mode=s_axilite port=rx_tail 
     #pragma HLS INTERFACE mode=s_axilite port=tx_head 
@@ -183,21 +208,25 @@ void process_request(char* rxq_addresses,
     #pragma HLS STREAM variable=rx_head_stream type=fifo depth=20
     #pragma HLS STREAM variable=rx_tail_stream type=fifo depth=20
 
-    for (int i = 0; i < 10; i++) {
-        #pragma HLS PIPELINE OFF
-        rx_packet<512> packet;
-        packet.session_id = i;
-        packet.length = 64;
-        rx_packet_stream.write(packet);
+    if (*tx_head != *tx_tail) {
+        tx_handler(txq_addresses, tx_buffer, tx_head, tx_tail);
     }
-
-    #pragma HLS DATAFLOW
-    static int count = 0;
-    while (count++ < 100) {
-    // fill_rx_packet_stream(rx_packet_stream);
-    update_rx_head_stream(rx_head, rx_head_stream);
-    rx_handler(rxq_addresses, rx_buffer, rx_packet_stream, rx_head_stream, rx_tail_stream);
-    update_rx_tail(rx_tail_stream, rx_tail, tx_head);
+    else {
+        for (int i = 0; i < 10; i++) {
+            #pragma HLS PIPELINE OFF
+            rx_packet<512> packet;
+            packet.session_id = i;
+            packet.length = 64;
+            rx_packet_stream.write(packet);
+        }
+        #pragma HLS DATAFLOW
+        static int count = 0;
+        while (count++ < 200) {
+        // fill_rx_packet_stream(rx_packet_stream);
+        update_rx_head_stream(rx_head, rx_head_stream);
+        rx_handler(rxq_addresses, rx_buffer, rx_packet_stream, rx_head_stream, rx_tail_stream);
+        update_rx_tail(rx_tail_stream, rx_tail, tx_head);
+        }
     }
 }
 }

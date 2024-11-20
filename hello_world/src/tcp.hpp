@@ -24,7 +24,11 @@ struct rx_packet {
 struct rx_packet_host {
     uint16_t session_id;
     uint16_t length;
-    void *data;
+};
+
+struct tx_packet_host {
+    uint16_t session_id;
+    uint16_t length;
 };
 
 template <int D>

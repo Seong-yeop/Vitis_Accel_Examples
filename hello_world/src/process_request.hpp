@@ -22,6 +22,7 @@ void update_rx_head_stream(uint32_t* rx_head, hls::stream<uint32_t>& rx_head_str
 
 extern "C" {
     void process_request(char* rxq_addresses, 
+                         char* rx_buffer,
                          char* txq_addresses,
                          uint32_t* rx_head, 
                          uint32_t* rx_tail, 
@@ -29,4 +30,10 @@ extern "C" {
                          uint32_t* tx_tail);
 }
 
+extern "C" {
+void send_kernel(char* txq_addresses, 
+                 char *data,
+                 uint32_t* tx_head, 
+                 uint32_t* tx_tail); 
+}
 #endif // PROCESS_REQUEST_HPP

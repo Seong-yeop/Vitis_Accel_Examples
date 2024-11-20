@@ -42,6 +42,7 @@ void fill_rx_packet_stream(hls::stream<rx_packet<D>>& rx_packet_stream) {
 
 template <int D>
 void rx_handler(char* rxq_addresses, 
+                char* rx_buffer,
                 hls::stream<rx_packet<D>>& rx_packet_stream,
                 hls::stream<uint32_t>& rx_head_stream,
                 hls::stream<uint32_t>& rx_tail_stream)
@@ -94,6 +95,15 @@ void rx_handler(char* rxq_addresses,
                 rxq_addresses[offset + 2] = (packet_host.length >> 0) & 0xFF;
                 rxq_addresses[offset + 3] = (packet_host.length >> 8) & 0xFF;
 
+                // Copy the data to the buffer
+                // net_axis<D> data = '1234';
+                // write_bandwidth(rx_buffer + 1500*_rx_tail, packet.data.data, packet.length);
+                rx_buffer[1500*_rx_tail + 0] = 65;
+                rx_buffer[1500*_rx_tail + 1] = 66;
+                rx_buffer[1500*_rx_tail + 2] = 67;
+                rx_buffer[1500*_rx_tail + 3] = 68;
+                rx_buffer[1500*_rx_tail + 4] = 69;
+
                 // `_rx_tail` 업데이트
                 _rx_tail = (_rx_tail + 1) % QUEUE_SIZE;
                 // 다음 상태로 이동하여 tail을 업데이트할 준비
@@ -122,13 +132,13 @@ void rx_handler(char* rxq_addresses,
     }
 }
 
+
+
 void update_rx_tail(hls::stream<uint32_t>& rx_tail_stream, uint32_t* rx_tail, uint32_t* tx_head) {
     if (!rx_tail_stream.empty()) { // stream에 데이터가 안 들어오는 듯
-        *tx_head = 9876; // 출력 안됨 
         *rx_tail = rx_tail_stream.read();
     }
     else {
-        *tx_head = 1234; // 출력됨
     }
 }
 
@@ -149,6 +159,7 @@ void update_rx_head_stream(uint32_t* rx_head, hls::stream<uint32_t>& rx_head_str
 
 extern "C" {
 void process_request(char* rxq_addresses, 
+        char* rx_buffer,
         char* txq_addresses,
         uint32_t* rx_head, 
         uint32_t* rx_tail, 
@@ -156,6 +167,7 @@ void process_request(char* rxq_addresses,
         uint32_t* tx_tail)
 {
     #pragma HLS INTERFACE mode=m_axi port=rxq_addresses bundle=gmem0 offset=slave max_read_burst_length=64
+    #pragma HLS INTERFACE mode=m_axi port=rx_buffer bundle=gmem0 offset=slave max_read_burst_length=64
     #pragma HLS INTERFACE mode=m_axi port=txq_addresses bundle=gmem1 offset=slave max_write_burst_length=64
     #pragma HLS INTERFACE mode=s_axilite port=rx_head 
     #pragma HLS INTERFACE mode=s_axilite port=rx_tail 
@@ -184,8 +196,9 @@ void process_request(char* rxq_addresses,
     while (count++ < 100) {
     // fill_rx_packet_stream(rx_packet_stream);
     update_rx_head_stream(rx_head, rx_head_stream);
-    rx_handler(rxq_addresses, rx_packet_stream, rx_head_stream, rx_tail_stream);
+    rx_handler(rxq_addresses, rx_buffer, rx_packet_stream, rx_head_stream, rx_tail_stream);
     update_rx_tail(rx_tail_stream, rx_tail, tx_head);
     }
 }
 }
+

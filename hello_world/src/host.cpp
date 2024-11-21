@@ -71,8 +71,17 @@ int main(int argc, char **argv) {
     auto tx_head_offset = krnl.offset(6);
     auto tx_tail_offset = krnl.offset(7);
 
-    printf("rx tail offset: %d\n", rx_tail_offset);
+    // std::cout << "rx_head_offset: " << rx_head_offset << std::endl;
+    // std::cout << "rx_tail_offset: " << rx_tail_offset << std::endl;
+    // std::cout << "tx_head_offset: " << tx_head_offset << std::endl;
+    // std::cout << "tx_tail_offset: " << tx_tail_offset << std::endl;
 
+    krnl.write_register(rx_head_offset, rx_head);
+    krnl.write_register(rx_tail_offset, rx_tail);
+    krnl.write_register(tx_head_offset, tx_head);
+    krnl.write_register(tx_tail_offset, tx_tail);
+
+/*
     rxq_addresses.sync(XCL_BO_SYNC_BO_TO_DEVICE);
     std::cout << "Execute the kernel" << std::endl;
     auto run = krnl(rxq_addresses, rx_buffer, txq_addresses, tx_buffer);  
@@ -93,9 +102,9 @@ int main(int argc, char **argv) {
     std::cout << "Tx tail: " << tx_tail << std::endl;
 
     int i = 0;
-    while (i < 1) {
+    while (i < 3) {
         i++;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::seconds(2));
         std::cout << "Polling..." << std::endl;
 
         rx_tail = krnl.read_register(rx_tail_offset);
@@ -104,38 +113,74 @@ int main(int argc, char **argv) {
 
         while (rx_head != rx_tail) {
             rxq_addresses.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+            rx_buffer.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
             auto rxq_mapped = rxq_addresses.map<rx_packet*>();
 
             rx_packet* rx_packet_data = &rxq_mapped[(rx_head % QUEUE_SIZE)];
             std::cout << "Rx head: " << rx_head;
             std::cout << " Received packet: " << rx_packet_data->session_id << " " << rx_packet_data->length << std::endl;
-            for (int i = 0; i < rx_packet_data->length; i++) {
-                std::cout << rx_buffer[1500*rx_head + i];
+            for (int i = 0; i < 5; i++) {
+                // Copy data from rx_buffer
+                std::cout << rx_buffer.map<char*>()[rx_head*BUFFER_SIZE + i];
             }
+            std::cout << std::endl;
             rx_head = (rx_head + 1) % QUEUE_SIZE;
         }
         krnl.write_register(rx_head_offset, rx_head);
-        // krnl.write_register(tx_tail_offset, *tx_tail);
     }
+*/
+    krnl.write_register(tx_head_offset, tx_head);
+    auto tx_buffer_map = tx_buffer.map<char*>();
+    for (uint16_t i = 0; i < 10; i++) {
+        tx_packet* tx_packet_data = &txq_addresses.map<tx_packet*>()[i];
+        tx_packet_data->session_id = i;
+        tx_packet_data->length = 1500;
+        tx_tail = (tx_tail + 1) % QUEUE_SIZE;
+        // krnl.write_register(tx_tail_offset, tx_tail);
 
+        // copy data to tx_buffer
+        for (uint16_t j = 0; j < 1500; j++) {
+            tx_buffer_map[i*BUFFER_SIZE + j] = 'A' + i;
+        }
+    }
+    krnl.write_register(tx_tail_offset, tx_tail);
 
-    // krnl.write_register(tx_head_offset, tx_head);
-    // for (int i = 0; i < 10; i++) {
-    //     tx_packet* tx_packet_data = &txq_addresses.map<tx_packet*>()[i];
-    //     tx_packet_data->session_id = i;
-    //     tx_packet_data->length = i;
-    //     tx_tail = (tx_tail + 1) % QUEUE_SIZE;
-    //     tx_buffer[1500*tx_tail] = i;
-    // }
-    // krnl.write_register(tx_tail_offset, tx_tail);
-    // txq_addresses.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-    // char data[1500] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    // auto run2 = send_krnl(txq_addresses, data);
-    // // run2.wait();
+    tx_head = krnl.read_register(tx_head_offset);
+    tx_tail = krnl.read_register(tx_tail_offset);
+    std::cout << "Tx head: " << tx_head << std::endl;
+    std::cout << "Tx tail: " << tx_tail << std::endl;
 
-    // std::cout << "Send kernel" << std::endl;
-    // std::cout << send_krnl.read_register(send_krnl.offset(2)) << std::endl;
-    // std::cout << send_krnl.read_register(send_krnl.offset(3)) << std::endl;
+    
+    rxq_addresses.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+    rx_buffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+    tx_buffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+    txq_addresses.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+    
+    auto run2 = krnl(rxq_addresses, rx_buffer, txq_addresses, tx_buffer, rx_head, rx_tail, tx_head, tx_tail);  
+    // auto run2 = krnl(rxq_addresses, rx_buffer, txq_addresses, tx_buffer);  
+    // auto run2 = xrt::run(krnl);
+    // run2.set_arg(0, rxq_addresses);
+    // run2.set_arg(1, rx_buffer);
+    // run2.set_arg(2, txq_addresses);
+    // run2.set_arg(3, tx_buffer);
+    // run2.set_arg(4, rx_head);
+    // run2.set_arg(5, rx_tail);
+    // run2.set_arg(6, &tx_head);
+    // run2.set_arg(7, &tx_tail);
+    // run2.start(); 
+    
+    // std::this_thread::sleep_for(std::chrono::seconds(10));
+    run2.wait();
+    // run2 = krnl(rxq_addresses, rx_buffer, txq_addresses, tx_buffer);  
+    // run2 = krnl(rxq_addresses, rx_buffer, txq_addresses, tx_buffer);  
+    // run2 = krnl(rxq_addresses, rx_buffer, txq_addresses, tx_buffer);  
+    txq_addresses.sync(XCL_BO_SYNC_BO_FROM_DEVICE); // 커널 실행 후 동기화
+    tx_buffer.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+
+    tx_head = krnl.read_register(tx_head_offset);
+    tx_tail = krnl.read_register(tx_tail_offset);
+    std::cout << "Tx head: " << tx_head << std::endl;
+    std::cout << "Tx tail: " << tx_tail << std::endl;
 
     return 0;
 }

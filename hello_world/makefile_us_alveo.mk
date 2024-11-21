@@ -62,7 +62,7 @@ EXECUTABLE = ./hello_world_xrt
 EMCONFIG_DIR = $(TEMP_DIR)
 
 ############################## Setting up CSIM Variables ##############################
-CSIM_SRCS = ./src/send_kernel.cpp ./src/process_request.cpp ./src/testbench.cpp
+CSIM_SRCS = ./src/process_request.cpp ./src/testbench.cpp
 CSIM_EXEC = ./csim_executable
 
 CSIM_FLAGS = -I$(XILINX_HLS)/include -I$(XILINX_XRT)/include -I$(XILINX_VIVADO)/include -std=c++11 -Wall -O0 -g
@@ -97,15 +97,10 @@ $(TEMP_DIR)/process_request.xo: src/process_request.cpp
 	mkdir -p $(TEMP_DIR)
 	v++ -c $(VPP_FLAGS) -t $(TARGET) --platform $(PLATFORM) -k process_request --temp_dir $(TEMP_DIR) -I'$(<D)' -o'$@' '$<'
 
-# Compile send_kernel kernel
-$(TEMP_DIR)/send_kernel.xo: src/send_kernel.cpp
-	mkdir -p $(TEMP_DIR)
-	v++ -c $(VPP_FLAGS) -t $(TARGET) --platform $(PLATFORM) -k send_kernel --temp_dir $(TEMP_DIR) -I'$(<D)' -o'$@' '$<'
-
-# Link both kernels into a single xclbin
-$(BUILD_DIR)/process_request.xclbin: $(TEMP_DIR)/process_request.xo $(TEMP_DIR)/send_kernel.xo
+# Link only process_request kernel into a single xclbin
+$(BUILD_DIR)/process_request.xclbin: $(TEMP_DIR)/process_request.xo
 	mkdir -p $(BUILD_DIR)
-	v++ -l $(VPP_FLAGS) $(VPP_LDFLAGS) -t $(TARGET) --platform $(PLATFORM) --temp_dir $(TEMP_DIR) -o'$(LINK_OUTPUT)' $^
+	v++ -l $(VPP_FLAGS) $(VPP_LDFLAGS) -t $(TARGET) --platform $(PLATFORM) --temp_dir $(TEMP_DIR) -o'$(LINK_OUTPUT)' $<
 	v++ -p $(LINK_OUTPUT) $(VPP_FLAGS) -t $(TARGET) --platform $(PLATFORM) --package.out_dir $(PACKAGE_OUT) -o $(BUILD_DIR)/process_request.xclbin
 
 ############################## Setting Rules for Host (Building Host Executable) ##############################

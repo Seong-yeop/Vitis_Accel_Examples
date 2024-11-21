@@ -156,26 +156,90 @@ void update_rx_head_stream(uint32_t* rx_head, hls::stream<uint32_t>& rx_head_str
     }
 }
 
-void tx_handler(char *txq_addresses,
-                char *data,
-                uint32_t* tx_head,
-                uint32_t* tx_tail) 
-{
-    printf("tx_handler\n");
-    // Read from txq_addresses
-    printf("tx_head: %d, tx_tail: %d\n", *tx_head, *tx_tail);
-    for (uint32_t i = *tx_head; i < *tx_tail; i++) {
-        // #pragma HLS PIPELINE
-        uint16_t session_id = *(uint16_t*)&txq_addresses[i*4];
-        uint16_t length = *(uint16_t*)&txq_addresses[i*4 + 2];
-        printf("session_id: %d, length: %d\n", session_id, length);
-        // Process or send the data
-        for (int i = 0; i < length; i++) {
-            char tmp = data[1500* (*tx_head) + i];
-            printf("%c", tmp);
+void update_tx_tail_stream(uint32_t* tx_tail, hls::stream<uint32_t>& tx_tail_stream) {
+    static uint32_t tx_tail_prev = 0;
+    static bool first_write = true;
+    if(!tx_tail_stream.full()) {
+        if (first_write || *tx_tail != tx_tail_prev) {
+            tx_tail_prev = *tx_tail;
+            tx_tail_stream.write(*tx_tail);
+            first_write = false;
         }
-        printf("\n");
-        *tx_head = (*tx_head + 1) % QUEUE_SIZE;
+    }
+}
+
+void update_tx_head(hls::stream<uint32_t>& tx_head_stream, uint32_t* tx_head) {
+    if (!tx_head_stream.empty()) {
+        *tx_head = tx_head_stream.read();
+    }
+}
+
+void tx_handler(uint16_t* txq_addresses,
+                char* tx_buffer,
+                hls::stream<uint32_t>& tx_head_stream,
+                hls::stream<uint32_t>& tx_tail_stream) 
+{
+    #pragma HLS INLINE OFF
+    enum tx_state {IDLE, SEND_PACKET, UPDATE_HEAD};
+    static tx_state state = tx_state::IDLE;
+    static uint32_t _tx_head = 0;
+    static uint32_t _tx_tail = 0;
+
+    #pragma HLS reset variable=state
+    #pragma HLS reset variable=_tx_head
+
+    switch (state) {
+        case tx_state::IDLE:
+        {
+            printf("IDLE\n");
+            // Check if the tx_head_stream is ready to read
+            if (!tx_tail_stream.empty()) {
+                _tx_tail = tx_tail_stream.read();
+                state = tx_state::IDLE;
+            }
+            else {
+                if (_tx_head == _tx_tail) { // empty
+                    state = tx_state::IDLE;
+                }
+                else {
+                    state = tx_state::SEND_PACKET;
+                }
+            }
+            break;
+        }
+        case tx_state::SEND_PACKET:
+        {
+            printf("SEND_PACKET\n");
+            // Process or send the data
+            uint16_t session_id = txq_addresses[_tx_head * 2];
+            uint16_t length = txq_addresses[_tx_head * 2 + 1];
+
+            printf("Received packet: session_id=%u, length=%u\n", session_id, length);
+            
+            for (uint16_t i = 0; i < 1500; i++) {
+                char tmp = tx_buffer[1500 * _tx_head + i];
+                printf("%c", tmp);
+            }
+            printf("\n");
+
+            // Update the tx_head
+            _tx_head = (_tx_head + 1) % QUEUE_SIZE;
+            state = tx_state::UPDATE_HEAD;
+            break;
+        }
+        case tx_state::UPDATE_HEAD:
+        {
+            printf("UPDATE_HEAD\n");
+            // Update the tx_head_stream
+            if (!tx_head_stream.full()) {
+                tx_head_stream.write(_tx_head);
+                state = tx_state::IDLE;
+            }
+            else {
+                state = tx_state::UPDATE_HEAD;
+            }
+            break;
+        }
     }
 }
 
@@ -183,7 +247,7 @@ void tx_handler(char *txq_addresses,
 extern "C" {
 void process_request(char* rxq_addresses, 
         char* rx_buffer,
-        char* txq_addresses,
+        uint16_t* txq_addresses,
         char* tx_buffer,
         uint32_t* rx_head, 
         uint32_t* rx_tail, 
@@ -208,26 +272,36 @@ void process_request(char* rxq_addresses,
     #pragma HLS STREAM variable=rx_head_stream type=fifo depth=20
     #pragma HLS STREAM variable=rx_tail_stream type=fifo depth=20
 
-    if (*tx_head != *tx_tail) {
-        tx_handler(txq_addresses, tx_buffer, tx_head, tx_tail);
+
+    static hls::stream<uint32_t> tx_head_stream;
+    static hls::stream<uint32_t> tx_tail_stream;
+    #pragma HLS STREAM variable=tx_head_stream type=fifo depth=20
+    #pragma HLS STREAM variable=tx_tail_stream type=fifo depth=20
+
+
+    // for (int i = 0; i < 10; i++) {
+    //     #pragma HLS PIPELINE OFF
+    //     rx_packet<512> packet;
+    //     packet.session_id = i;
+    //     packet.length = 64;
+    //     rx_packet_stream.write(packet);
+    // }
+
+    // #pragma HLS DATAFLOW
+    static int count = 0;
+    while (count++ < 20) {
+        update_tx_tail_stream(tx_tail, tx_tail_stream);
+        tx_handler(txq_addresses, tx_buffer, tx_head_stream, tx_tail_stream);
+        update_tx_head(tx_head_stream, tx_head);
     }
-    else {
-        for (int i = 0; i < 10; i++) {
-            #pragma HLS PIPELINE OFF
-            rx_packet<512> packet;
-            packet.session_id = i;
-            packet.length = 64;
-            rx_packet_stream.write(packet);
-        }
-        #pragma HLS DATAFLOW
-        static int count = 0;
-        while (count++ < 200) {
-        // fill_rx_packet_stream(rx_packet_stream);
-        update_rx_head_stream(rx_head, rx_head_stream);
-        rx_handler(rxq_addresses, rx_buffer, rx_packet_stream, rx_head_stream, rx_tail_stream);
-        update_rx_tail(rx_tail_stream, rx_tail, tx_head);
-        }
-    }
+    // static int count = 0;
+    // while (count++ < 200) {
+    //     // fill_rx_packet_stream(rx_packet_stream);
+    //     update_rx_head_stream(rx_head, rx_head_stream);
+    //     rx_handler(rxq_addresses, rx_buffer, rx_packet_stream, rx_head_stream, rx_tail_stream);
+    //     update_rx_tail(rx_tail_stream, rx_tail, tx_head); 
+    // }
+
 }
 }
 

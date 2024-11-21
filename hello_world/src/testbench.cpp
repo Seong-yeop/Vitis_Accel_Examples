@@ -25,7 +25,8 @@ int main() {
     uint32_t tx_tail = 0;
 
     // `process_request` 함수 호출
-    process_request((char*)rxq_addresses, rx_buffer, (char*)txq_addresses, tx_buffer, &rx_head, &rx_tail, &tx_head, &tx_tail);
+    // process_request((char*)rxq_addresses, rx_buffer, (char*)txq_addresses, tx_buffer, &rx_head, &rx_tail, &tx_head, &tx_tail);
+    // process_request((char*)rxq_addresses, rx_buffer, (char*)txq_addresses, tx_buffer, &rx_head, &rx_tail, &tx_head, &tx_tail);
 
     // 결과 확인
     std::cout << "rx_head: " << rx_head << std::endl;
@@ -59,12 +60,17 @@ int main() {
     
     for (int i = 0; i <10; i++) {
         txq_addresses[i].session_id = i;
-        txq_addresses[i].length = 1;
-        tx_buffer[1500*i] = 65;
+        txq_addresses[i].length = 1500;
+        for (uint16_t j = 0; j < txq_addresses[i].length; j++) {
+            tx_buffer[1500*i + j] = 65+i;
+        }
         tx_tail = (tx_tail + 1) % QUEUE_SIZE;
     }
 
-    process_request((char*)rxq_addresses, rx_buffer, (char*)txq_addresses, tx_buffer, &rx_head, &rx_tail, &tx_head, &tx_tail);
+    process_request((char*)rxq_addresses, rx_buffer, (uint16_t*)txq_addresses, tx_buffer, &rx_head, &rx_tail, &tx_head, &tx_tail);
+
+    std::cout << "tx_head: " << tx_head << std::endl;
+    // process_request((char*)rxq_addresses, rx_buffer, (char*)txq_addresses, tx_buffer, &rx_head, &rx_tail, &tx_head, &tx_tail);
 
     return 0;
 }

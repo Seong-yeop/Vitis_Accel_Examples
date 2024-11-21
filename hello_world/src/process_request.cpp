@@ -209,6 +209,7 @@ void tx_handler(uint16_t* txq_addresses,
         }
         case tx_state::SEND_PACKET:
         {
+            char tmp = 0;
             printf("SEND_PACKET\n");
             // Process or send the data
             uint16_t session_id = txq_addresses[_tx_head * 2];
@@ -216,10 +217,12 @@ void tx_handler(uint16_t* txq_addresses,
 
             printf("Received packet: session_id=%u, length=%u\n", session_id, length);
             
-            for (uint16_t i = 0; i < 1500; i++) {
-                char tmp = tx_buffer[1500 * _tx_head + i];
+            for (uint16_t i = 0; i < length; i++) {
+                tmp |= tx_buffer[1500 * _tx_head + i];
                 printf("%c", tmp);
             }
+            tx_buffer[1500*_tx_head] = tmp;
+
             printf("\n");
 
             // Update the tx_head
@@ -254,10 +257,10 @@ void process_request(char* rxq_addresses,
         uint32_t* tx_head, 
         uint32_t* tx_tail)
 {
-    #pragma HLS INTERFACE mode=m_axi port=rxq_addresses bundle=gmem0 offset=slave max_read_burst_length=64
-    #pragma HLS INTERFACE mode=m_axi port=rx_buffer bundle=gmem0 offset=slave max_read_burst_length=64
-    #pragma HLS INTERFACE mode=m_axi port=txq_addresses bundle=gmem1 offset=slave max_write_burst_length=64
-    #pragma HLS INTERFACE mode=m_axi port=tx_buffer bundle=gmem1 offset=slave max_write_burst_length=64
+    #pragma HLS INTERFACE mode=m_axi port=rxq_addresses bundle=gmem0 offset=slave max_write_burst_length=64
+    #pragma HLS INTERFACE mode=m_axi port=rx_buffer bundle=gmem0 offset=slave max_write_burst_length=64
+    #pragma HLS INTERFACE mode=m_axi port=txq_addresses bundle=gmem1 offset=slave max_read_burst_length=64
+    #pragma HLS INTERFACE mode=m_axi port=tx_buffer bundle=gmem1 offset=slave max_read_burst_length=64
     #pragma HLS INTERFACE mode=s_axilite port=rx_head 
     #pragma HLS INTERFACE mode=s_axilite port=rx_tail 
     #pragma HLS INTERFACE mode=s_axilite port=tx_head 

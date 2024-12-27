@@ -1,0 +1,68 @@
+Open the device0
+Load the xclbin build_dir.hw.xilinx_u55c_gen3x16_xdma_3_202210_1/bandwidth.xclbin
+Concurrent Read and Write Throughput = 6.62427 (GB/sec) for buffer size 4.00 KB
+Read Throughput = 4.67499 (GB/sec) for buffer size 4.00 KB
+Write Throughput = 5.8691 (GB/sec) for buffer size 4.00 KB
+
+Concurrent Read and Write Throughput = 6.73891 (GB/sec) for buffer size 8.00 KB
+Read Throughput = 4.77683 (GB/sec) for buffer size 8.00 KB
+Write Throughput = 5.90068 (GB/sec) for buffer size 8.00 KB
+
+Concurrent Read and Write Throughput = 10.2906 (GB/sec) for buffer size 16.00 KB
+Read Throughput = 5.61243 (GB/sec) for buffer size 16.00 KB
+Write Throughput = 7.81836 (GB/sec) for buffer size 16.00 KB
+
+Concurrent Read and Write Throughput = 12.1619 (GB/sec) for buffer size 32.00 KB
+Read Throughput = 7.31593 (GB/sec) for buffer size 32.00 KB
+Write Throughput = 9.34091 (GB/sec) for buffer size 32.00 KB
+
+Concurrent Read and Write Throughput = 15.7252 (GB/sec) for buffer size 64.00 KB
+Read Throughput = 8.97473 (GB/sec) for buffer size 64.00 KB
+Write Throughput = 10.3391 (GB/sec) for buffer size 64.00 KB
+
+Concurrent Read and Write Throughput = 18.6511 (GB/sec) for buffer size 128.00 KB
+Read Throughput = 10.2091 (GB/sec) for buffer size 128.00 KB
+Write Throughput = 11.0444 (GB/sec) for buffer size 128.00 KB
+
+Concurrent Read and Write Throughput = 20.2135 (GB/sec) for buffer size 256.00 KB
+Read Throughput = 10.7852 (GB/sec) for buffer size 256.00 KB
+Write Throughput = 11.243 (GB/sec) for buffer size 256.00 KB
+
+Concurrent Read and Write Throughput = 21.5592 (GB/sec) for buffer size 512.00 KB
+Read Throughput = 11.304 (GB/sec) for buffer size 512.00 KB
+Write Throughput = 11.4679 (GB/sec) for buffer size 512.00 KB
+
+Concurrent Read and Write Throughput = 22.1474 (GB/sec) for buffer size 1.00 MB
+Read Throughput = 11.4322 (GB/sec) for buffer size 1.00 MB
+Write Throughput = 11.5848 (GB/sec) for buffer size 1.00 MB
+
+Concurrent Read and Write Throughput = 22.4135 (GB/sec) for buffer size 2.00 MB
+Read Throughput = 11.5484 (GB/sec) for buffer size 2.00 MB
+Write Throughput = 11.5634 (GB/sec) for buffer size 2.00 MB
+
+Concurrent Read and Write Throughput = 21.7846 (GB/sec) for buffer size 4.00 MB
+Read Throughput = 11.6648 (GB/sec) for buffer size 4.00 MB
+Write Throughput = 11.6171 (GB/sec) for buffer size 4.00 MB
+
+Concurrent Read and Write Throughput = 21.5146 (GB/sec) for buffer size 8.00 MB
+Read Throughput = 11.5186 (GB/sec) for buffer size 8.00 MB
+Write Throughput = 11.6518 (GB/sec) for buffer size 8.00 MB
+
+Concurrent Read and Write Throughput = 21.3529 (GB/sec) for buffer size 16.00 MB
+Read Throughput = 11.5378 (GB/sec) for buffer size 16.00 MB
+Write Throughput = 11.5955 (GB/sec) for buffer size 16.00 MB
+
+Concurrent Read and Write Throughput = 22.4014 (GB/sec) for buffer size 32.00 MB
+Read Throughput = 11.5762 (GB/sec) for buffer size 32.00 MB
+Write Throughput = 11.6866 (GB/sec) for buffer size 32.00 MB
+
+Concurrent Read and Write Throughput = 22.6819 (GB/sec) for buffer size 64.00 MB
+Read Throughput = 11.5271 (GB/sec) for buffer size 64.00 MB
+Write Throughput = 11.6344 (GB/sec) for buffer size 64.00 MB
+
+Maximum bandwidth achieved :
+Concurrent Read and Write Throughput = 22.6819 (GB/sec) 
+Read Throughput = 11.6648 (GB/sec) 
+Write Throughput = 11.6866 (GB/sec) 
+
+TEST PASSED

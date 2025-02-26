@@ -1,0 +1,23 @@
+{
+    "schema_version": {
+        "major": "1",
+        "minor": "2",
+        "patch": "0"
+    },
+    "generation": {
+        "this_file": "\/home\/csl\/yeop\/Vitis_Accel_Examples\/hello_world\/xrt.run_summary",
+        "source": "vp",
+        "PID": "1410838",
+        "timestamp": "1740582794638"
+    },
+    "files": [
+        {
+            "name": "native_trace.csv",
+            "type": "VP_TRACE"
+        },
+        {
+            "name": "summary.csv",
+            "type": "PROFILE_SUMMARY"
+        }
+    ]
+}

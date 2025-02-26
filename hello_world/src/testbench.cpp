@@ -2,75 +2,24 @@
 #include <hls_stream.h>
 #include <cstdint>
 
-#include "process_request.hpp"
+#include "nvme_driver_top.hpp"
 
-#define PACKET_SIZE 1500
 
 int main() {
-    // 호스트 메모리 공간에 매핑된 배열을 생성하여 커널에 전달
-    struct rx_packet_host rxq_addresses[QUEUE_SIZE] = {0};
-    struct rx_packet_host txq_addresses[QUEUE_SIZE] = {0};
+    struct nvme_cqe cqe[IO_QUEUE_MAX_DEPTH] = {0};
+    struct nvme_seq seq[IO_QUEUE_MAX_DEPTH] = {0};
 
-    char rx_buffer[QUEUE_SIZE * PACKET_SIZE] = {0};
-    char tx_buffer[QUEUE_SIZE * PACKET_SIZE] = {0};
-
-    for (int i = 0; i < 10; i++) {
-        struct rx_packet_host *packet = &rxq_addresses[i];
-    }
-
-    // 테스트용 레지스터 초기화
-    uint32_t rx_head = 0;
-    uint32_t rx_tail = 0;
-    uint32_t tx_head = 0;
-    uint32_t tx_tail = 0;
-
-    // `process_request` 함수 호출
-    // process_request((char*)rxq_addresses, rx_buffer, (char*)txq_addresses, tx_buffer, &rx_head, &rx_tail, &tx_head, &tx_tail);
-    // process_request((char*)rxq_addresses, rx_buffer, (char*)txq_addresses, tx_buffer, &rx_head, &rx_tail, &tx_head, &tx_tail);
-
-    // 결과 확인
-    std::cout << "rx_head: " << rx_head << std::endl;
-    std::cout << "rx_tail: " << rx_tail << std::endl;
-    std::cout << "tx_head: " << tx_head << std::endl;
-    std::cout << "tx_tail: " << tx_tail << std::endl;
-
-    bool passed = true;
-    for (int i = 0; i < 10; i++) {
-        if (rxq_addresses[i].session_id != i) {
-            std::cerr << "Test failed at index " << i << ": Expected " << i
-                      << " but got " << rxq_addresses[i].session_id << std::endl;
-            passed = false;
-        }
-        else {
-            std::cout << "Test passed at index " << i << ": " << rxq_addresses[i].session_id << std::endl;
-            std::cout << "length: " << rxq_addresses[i].length << std::endl;
-
-            for (int j = 0; j < 5; j++) {
-                std::cout << rx_buffer[PACKET_SIZE*i + j];
-            }
-            std::cout << std::endl;
-        }
-    }
-        
-    if (passed) {
-        std::cout << "Test passed!" << std::endl;
-    } else {
-        std::cout << "Test failed!" << std::endl;
-    }
+    uint32_t cq_head = 0;
+    uint32_t cq_tail = 0;
+    uint32_t sq_head = 0;
+    uint32_t sq_tail = 0;
+    uint8_t stop = 0;
     
-    for (int i = 0; i <10; i++) {
-        txq_addresses[i].session_id = i;
-        txq_addresses[i].length = 1500;
-        for (uint16_t j = 0; j < txq_addresses[i].length; j++) {
-            tx_buffer[1500*i + j] = 65+i;
-        }
-        tx_tail = (tx_tail + 1) % QUEUE_SIZE;
-    }
+    uint32_t cq_id = 0;
+    uint32_t cq_size = IO_QUEUE_MAX_DEPTH;
 
-    process_request((char*)rxq_addresses, rx_buffer, (uint16_t*)txq_addresses, tx_buffer, &rx_head, &rx_tail, &tx_head, &tx_tail);
+    uint32_t dbl[100];
 
-    std::cout << "tx_head: " << tx_head << std::endl;
-    // process_request((char*)rxq_addresses, rx_buffer, (char*)txq_addresses, tx_buffer, &rx_head, &rx_tail, &tx_head, &tx_tail);
 
     return 0;
 }

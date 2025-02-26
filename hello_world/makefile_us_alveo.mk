@@ -34,11 +34,11 @@ include ./utils.mk
 TEMP_DIR := ./_x.$(TARGET).$(XSA)
 BUILD_DIR := ./build_dir.$(TARGET).$(XSA)
 
-LINK_OUTPUT := $(BUILD_DIR)/process_request.link.xclbin
+LINK_OUTPUT := $(BUILD_DIR)/nvme_driver_top.link.xclbin
 PACKAGE_OUT = ./package.$(TARGET)
 
 VPP_PFLAGS := 
-CMD_ARGS = -x $(BUILD_DIR)/process_request.xclbin
+CMD_ARGS = -x $(BUILD_DIR)/nvme_driver_top.xclbin
 CXXFLAGS += -I$(XILINX_XRT)/include -I$(XILINX_VIVADO)/include -Wall -O0 -g -std=c++1y
 LDFLAGS += -L$(XILINX_XRT)/lib -pthread -lOpenCL
 
@@ -56,13 +56,13 @@ LDFLAGS += -luuid -lxrt_coreutil
 
 ############################## Setting up Kernel Variables ##############################
 # Kernel compiler global settings
-VPP_FLAGS += --save-temps 
+VPP_FLAGS += --save-temps --config ./mailbox_auto_restart.cfg
 
 EXECUTABLE = ./hello_world_xrt
 EMCONFIG_DIR = $(TEMP_DIR)
 
 ############################## Setting up CSIM Variables ##############################
-CSIM_SRCS = ./src/process_request.cpp ./src/testbench.cpp
+CSIM_SRCS = ./src/nvme_driver_top.cpp ./src/testbench.cpp
 CSIM_EXEC = ./csim_executable
 
 CSIM_FLAGS = -I$(XILINX_HLS)/include -I$(XILINX_XRT)/include -I$(XILINX_VIVADO)/include -std=c++11 -Wall -O0 -g
@@ -70,13 +70,13 @@ CSIM_LDFLAGS = -lrt -lstdc++
 
 ############################## Setting Targets ##############################
 .PHONY: all clean cleanall docs emconfig csim
-all: check-platform check-device check-vitis $(EXECUTABLE) $(BUILD_DIR)/process_request.xclbin emconfig
+all: check-platform check-device check-vitis $(EXECUTABLE) $(BUILD_DIR)/nvme_driver_top.xclbin emconfig
 
 .PHONY: host
 host: $(EXECUTABLE)
 
 .PHONY: build
-build: check-vitis check-device $(BUILD_DIR)/process_request.xclbin
+build: check-vitis check-device $(BUILD_DIR)/nvme_driver_top.xclbin
 
 .PHONY: xclbin
 xclbin: build
@@ -92,16 +92,24 @@ $(CSIM_EXEC): $(CSIM_SRCS)
 	$(CXX) -o $@ $^ $(CSIM_FLAGS) $(CSIM_LDFLAGS)
 
 ############################## Setting Rules for Binary Containers (Building Kernels) ##############################
-# Compile process_request kernel
-$(TEMP_DIR)/process_request.xo: src/process_request.cpp
+# Compile kernel
+$(TEMP_DIR)/nvme_driver_top.xo: src/nvme_driver_top.cpp src/nvme_submit_cmd.cpp # src/nvme_process_cpl.cpp 
 	mkdir -p $(TEMP_DIR)
-	v++ -c $(VPP_FLAGS) -t $(TARGET) --platform $(PLATFORM) -k process_request --temp_dir $(TEMP_DIR) -I'$(<D)' -o'$@' '$<'
+	v++ -c $(VPP_FLAGS) -t $(TARGET) --platform $(PLATFORM) \
+		-k nvme_driver_top --temp_dir $(TEMP_DIR) -I'$(<D)' \
+		-o'$@' $^
 
-# Link only process_request kernel into a single xclbin
-$(BUILD_DIR)/process_request.xclbin: $(TEMP_DIR)/process_request.xo
+
+$(TEMP_DIR)/packet_generator.xo: src/packet_generator.cpp
+	mkdir -p $(TEMP_DIR)
+	v++ -c $(VPP_FLAGS) -t $(TARGET) --platform $(PLATFORM) -k packet_generator --temp_dir $(TEMP_DIR) -I'$(<D)' -o'$@' '$<'
+
+$(BUILD_DIR)/nvme_driver_top.xclbin: $(TEMP_DIR)/nvme_driver_top.xo $(TEMP_DIR)/packet_generator.xo
 	mkdir -p $(BUILD_DIR)
-	v++ -l $(VPP_FLAGS) $(VPP_LDFLAGS) -t $(TARGET) --platform $(PLATFORM) --temp_dir $(TEMP_DIR) -o'$(LINK_OUTPUT)' $<
-	v++ -p $(LINK_OUTPUT) $(VPP_FLAGS) -t $(TARGET) --platform $(PLATFORM) --package.out_dir $(PACKAGE_OUT) -o $(BUILD_DIR)/process_request.xclbin
+	v++ -l $(VPP_FLAGS) $(VPP_LDFLAGS) -t $(TARGET) --platform $(PLATFORM) \
+		--temp_dir $(TEMP_DIR) -o '$(LINK_OUTPUT)' $^
+	v++ -p $(LINK_OUTPUT) $(VPP_FLAGS) -t $(TARGET) --platform $(PLATFORM) \
+		--package.out_dir $(PACKAGE_OUT) -o $(BUILD_DIR)/nvme_driver_top.xclbin
 
 ############################## Setting Rules for Host (Building Host Executable) ##############################
 $(EXECUTABLE): $(HOST_SRCS) | check-xrt

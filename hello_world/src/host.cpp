@@ -335,8 +335,6 @@ int nvme_io_write(int ssd_id, int qid,
     return wait_for_next_io_cqe(ssd_id, qid);
 }
 
-
-
 void insert_admin_sq(int ssd_id, uint32_t command[])
 {
     // printf("Inserting command to admin SQ\n");
@@ -811,7 +809,7 @@ int main(int argc, char **argv)
  
     uint64_t io_buf_phys = queue_phys_base + 0x10000;
     uint8_t *io_buf_virt = (uint8_t *)(huge_base + 0x10000);
-    memset(io_buf_virt, 0x38, 16384);  // 4096바이트(1블록) 예시
+    memset(io_buf_virt, 0x39, 16384);  // 4096바이트(1블록) 예시
     
     uint32_t tail = io_sq_tail[0][1];
 
@@ -824,11 +822,28 @@ int main(int argc, char **argv)
     ip.write_register(0x40, (FPGA_SQ_DOORBELL_BASE) & 0xFFFFFFFF);    
     ip.write_register(0x44, (FPGA_SQ_DOORBELL_BASE >> 32) & 0xFFFFFFFF);
 
+    sleep(1);
 
-    for (uint64_t i = 0; i < 10; i++) {
-        auto packet_generator_run = packet_generator_krnl(0x1, 10+i, 1, io_buf_phys, 1);
-        packet_generator_run.wait();
-    }
+    volatile uint32_t *cq_hdbell =
+    (uint32_t *)(ssd_virt_base[0] + 0x1000 + (2 * 1 + 1) * 4);
+
+    auto packet_generator_run = packet_generator_krnl(0x1, 140, 1, io_buf_phys, 2);
+    packet_generator_run.wait();
+
+    sleep(1);
+    *cq_hdbell = 2;
+
+    packet_generator_run = packet_generator_krnl(0x1, 150, 1, io_buf_phys, 2);
+    packet_generator_run.wait();
+    
+    sleep(1);
+    *cq_hdbell = 4;
+
+    packet_generator_run = packet_generator_krnl(0x1, 1600, 1, io_buf_phys, 2);
+    packet_generator_run.wait();
+
+    sleep(1);
+    *cq_hdbell = 6;
 
     // ip.write_register(0x4c, io_buf_phys & 0xFFFFFFFF);
     // ip.write_register(0x50, (io_buf_phys >> 32) & 0xFFFFFFFF);
@@ -838,6 +853,11 @@ int main(int argc, char **argv)
     // ip.write_register(0x68, 1);
     // ip.write_register(0x70, 1);
 
+
+
+    
+    sleep(1);
+    print_io_sq(0, 10);
     print_io_cq(0, 10);    
 
     

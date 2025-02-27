@@ -10,16 +10,19 @@ void packet_generator(
     hls::stream<struct request_packet> &request_packet_stream
 )
 {
+    static uint16_t cid = 0;
+    uint64_t slba_base = slba;
     for (uint32_t i = 0; i < request_count; i++) {
         struct request_packet req;
         req.dw0.opc = opcode;
-        req.dw1 = (uint32_t)(slba & 0xffffffffUL);
-        req.dw2.slba = (uint32_t)(slba >> 32);
+        req.dw0.id = cid++;
+        req.dw1 = (uint32_t)(slba_base & 0xffffffffUL);
+        req.dw2.slba = (uint32_t)(slba_base >> 32);
+        slba_base++;
         req.dw2.nlb = nlb;
         // buffer address        
         req.dw3= prp1;
         request_packet_stream.write(req);
     }
-
 }
 }

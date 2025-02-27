@@ -1,6 +1,6 @@
 Profile Summary
-Generated on: 2025-02-26 15:13:14
-Msec since Epoch: 1740582794636
+Generated on: 2025-02-27 04:40:52
+Msec since Epoch: 1740631252223
 Profiled application: hello_world_xrt
 Target platform: Xilinx
 Tool version: 2022.1
@@ -19,12 +19,12 @@ COLUMN:<html>Total<br>Time (ms)</html>,float,Total execution time (in ms),
 COLUMN:<html>Minimum<br>Time (ms)</html>,float,Minimum execution time (in ms),
 COLUMN:<html>Average<br>Time (ms)</html>,float,Average execution time (in ms),
 COLUMN:<html>Maximum<br>Time (ms)</html>,float,Maximum execution time (in ms),
-ENTRY:xrt::device::device,1,61.0763,61.0763,61.0763,61.0763,
-ENTRY:xrt::device::load_xclbin,1,6881.99,6881.99,6881.99,6881.99,
-ENTRY:xrt::kernel::kernel,1,25.1492,25.1492,25.1492,25.1492,
-ENTRY:xrt::run::run,10,0.093351,0.00565,0.0093351,0.036983,
-ENTRY:xrt::run::start,10,0.076038,0.006209,0.0076038,0.014121,
-ENTRY:xrt::run::wait,10,0.2387,0.015997,0.02387,0.076914,
+ENTRY:xrt::device::device,1,109.014,109.014,109.014,109.014,
+ENTRY:xrt::device::load_xclbin,1,6878.34,6878.34,6878.34,6878.34,
+ENTRY:xrt::kernel::kernel,1,27.3249,27.3249,27.3249,27.3249,
+ENTRY:xrt::run::run,3,0.467354,0.073399,0.155785,0.206004,
+ENTRY:xrt::run::start,3,0.144413,0.04258,0.0481377,0.052754,
+ENTRY:xrt::run::wait,3,0.211271,0.062542,0.0704237,0.086059,
 
 
 
@@ -37,7 +37,7 @@ HBM_DEVICE,all,0,
 KDMA_DEVICE,all,0,
 P2P_DEVICE,all,0,
 TRACE_MEMORY,all,FIFO,
-APPLICATION_RUN_TIME_MS,all,8534.76,
+APPLICATION_RUN_TIME_MS,all,13583.2,
 XRT_INI_SETTING,opencl_summary,0,Generation of OpenCL summary report (deprecated)
 XRT_INI_SETTING,opencl_trace,0,Generation of trace of OpenCL APIs and memory transfers
 XRT_INI_SETTING,opencl_device_counter,0,Hardware counters added to OpenCL summary file (deprecated)

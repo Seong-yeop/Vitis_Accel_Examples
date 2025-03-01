@@ -18,7 +18,9 @@ extern "C" {
         hls::stream<struct request_packet> &request_packet_stream,
         /* NVMe Controller Completion Interface */
         uint32_t &completed_request_number,
-        uint32_t &completed_request_bytes
+        uint32_t &completed_request_bytes,
+        uint64_t prp2_physical_address,
+        uint64_t* prp2_virtual_address
     )
     {
         #pragma HLS INTERFACE ap_ctrl_none port=return
@@ -56,6 +58,8 @@ extern "C" {
             dbl_base_address, 
             buffer_base_address,
             sq_tail, 
+            prp2_physical_address,  
+            prp2_virtual_address,           
             request_packet_stream
         );
     }

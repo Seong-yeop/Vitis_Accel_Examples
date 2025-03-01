@@ -8,7 +8,7 @@
 
 void nvme_io_cmd_gen(
     hls::stream<struct request_packet> &request_packet_stream,
-    hls::stream<nvme_io_command_t> &nvme_io_command_stream
+    hls::stream<nvme_io_command_t> &nvme_prp_req_stream
 )
 {
     #pragma HLS INLINE off
@@ -48,8 +48,40 @@ void nvme_io_cmd_gen(
         cmd.cdw14 = 0;
         cmd.cdw15 = 0;
     
+        nvme_prp_req_stream.write(cmd);
+    }
+}
+
+void nvme_mgmt_prp(
+    hls::stream<nvme_io_command_t> &nvme_prp_req_stream,
+    uint64_t prp2_physical_address,
+    uint64_t* prp2_virtual_address,
+    hls::stream<nvme_io_command_t> &nvme_io_command_stream
+){
+    static int entry = 0;
+    #pragma HLS INLINE off
+    if(!nvme_prp_req_stream.empty()){
+        nvme_io_command_t cmd = nvme_prp_req_stream.read();
+        if(cmd.cdw12 == 0){
+            cmd.prp2 = 0;
+        }
+        else if(cmd.cdw12 == 1){
+            cmd.prp2 = cmd.prp1 + 0x1000;
+        }
+        else{
+            cmd.prp2 = prp2_physical_address + (entry * 0x1000);
+            for(int i = 0; i < cmd.cdw12; i++){
+                *(&prp2_virtual_address[entry * 512 + i]) = cmd.prp1 + ((i+1) * 0x1000);
+            }
+            entry = (entry + 1) % IO_QUEUE_MAX_DEPTH;
+
+        }
+
         nvme_io_command_stream.write(cmd);
     }
+
+
+
 }
 
 void nvme_io_sqe_dbl_write(
@@ -76,16 +108,26 @@ void nvme_io_submit(
     uint32_t *dbl_base_address,
     uint64_t *buffer_base_address,
     uint32_t &sq_tail,
+    uint64_t prp2_physical_address,
+    uint64_t* prp2_virtual_address,
     hls::stream<struct request_packet> &request_packet_stream
 )
 {
     #pragma HLS DATAFLOW
     
+    static hls::stream<nvme_io_command_t> nvme_prp_req_stream;
     static hls::stream<nvme_io_command_t> nvme_io_command_stream;
 
     nvme_io_cmd_gen(
         request_packet_stream,
-        nvme_io_command_stream  
+        nvme_prp_req_stream  
+    );
+
+    nvme_mgmt_prp(
+        nvme_prp_req_stream,
+        prp2_physical_address,
+        prp2_virtual_address,
+        nvme_io_command_stream
     );
 
     nvme_io_sqe_dbl_write(

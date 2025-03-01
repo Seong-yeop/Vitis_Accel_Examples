@@ -172,6 +172,8 @@ void nvme_io_submit(
     uint32_t *dbl_base_address,
     uint64_t *buffer_base_address,
     uint32_t &sq_tail,
+    uint64_t prp2_physical_address,
+    uint64_t* prp2_virtual_address,
     hls::stream<struct request_packet> &request_packet_stream
 );
 
@@ -189,7 +191,9 @@ extern "C" {
         hls::stream<struct request_packet> &request_packet_stream,
         /* NVMe Controller Completion Interface */
         uint32_t &completed_request_number,
-        uint32_t &completed_request_bytes
+        uint32_t &completed_request_bytes,
+        uint64_t prp2_physical_address,
+        uint64_t* prp2_virtual_address
     );
 }
 

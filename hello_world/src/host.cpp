@@ -22,7 +22,7 @@
 
 #define HUGEPAGE_SIZE (2 * 1024 * 1024)
 #define HUGEPAGE_FILE "/sys/kernel/hugepage_info/hugepage_phys"
-#define NVME_RESOURCE_FILE "/sys/bus/pci/devices/0000:18:00.0/resource"
+#define NVME_RESOURCE_FILE "/sys/bus/pci/devices/0000:af:00.0/resource"
 
 #define SSD_ADMIN_SQ_PHYS_BASE(ssd_id) ((queue_phys_base) + 0x2000 * (ssd_id))
 #define SSD_ADMIN_CQ_PHYS_BASE(ssd_id) ((queue_phys_base) + 0x2000 * (ssd_id) + 0x1000)
@@ -41,17 +41,20 @@
 #define SSD_IO_CQ_VIRT_BASE(ssd_id, qid) \
     ((queue_virt_base) + SSD_IO_QUEUE_OFFSET + (((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x1 << ram_type_bit))
 
-#define FPGA_HOST_MEM_BASE 0x2000000000
-#define FPGA_SSD_BAR_BASE FPGA_HOST_MEM_BASE
+#define FPGA_HOST_MEM_BASE 0x2000000000 //  ~0x2000008000
+#define FPGA_SSD_BAR_BASE (FPGA_HOST_MEM_BASE) 
 #define FPGA_SQ_DOORBELL_BASE (FPGA_SSD_BAR_BASE + 0x1000)
 
-#define FPGA_HUGEPG_BASE (FPGA_HOST_MEM_BASE + 32768)
+#define FPGA_HUGEPG_BASE (FPGA_HOST_MEM_BASE + 32768) // 0x2000008000 ~0x2000010000
 #define FPGA_IO_SQ_BASE (FPGA_HUGEPG_BASE + 0x2000)
 #define FPGA_IO_CQ_BASE (FPGA_HUGEPG_BASE + 0x3000)
+#define FPGA_EMPTY_MEM (FPGA_HUGEPG_BASE + 0x5000)
 
-#define FPGA_PRP_BASE (FPGA_HUGEPG_BASE + 0x10000)
+#define FPGA_INTEL_BAR_BASE (FPGA_HOST_MEM_BASE + 32768 + 32768) // 0x2000008000 ~0x2000010000
 
-#define FPGA_EMPTY_MEM (FPGA_HOST_MEM_BASE + 32768 + 0x5000)
+#define FPGA_HUGEPG_BASE2 (FPGA_HOST_MEM_BASE + 32768 + 32768 + 32768) // 0x2000008000 ~0x2000010000, 0x8570010000
+#define FPGA_PRP_BASE FPGA_HUGEPG_BASE2
+
 
 #define NVME_ADMIN_SUBMISSION_QUEUE_BASE_ADDR_OFFSET 0x28
 #define MAP_SIZE (1<<16)      
@@ -81,6 +84,14 @@ uint64_t queue_low_bit = 12;
 uint64_t ssd_low_bit = 12;
 uint64_t ram_type_bit = 12;
 
+void print_mem(uint64_t *mem, int length) {
+    printf("=============================\n");
+    printf("memory address: %p\n", mem);
+    for (int i = 0; i < length; i++) {
+        printf("mem[%d]: 0x%016lx\n", i, mem[i]);
+    }
+    printf("=============================\n");
+}
 
 void print_bar(int offset, int length) {
     printf("=============================\n");
@@ -807,9 +818,12 @@ int main(int argc, char **argv)
     auto packet_generator_krnl = xrt::kernel(device, uuid, "packet_generator");
 
  
-    uint64_t io_buf_phys = queue_phys_base + 0x10000;
-    uint8_t *io_buf_virt = (uint8_t *)(huge_base + 0x10000);
-    memset(io_buf_virt, 0x39, 16384);  // 4096바이트(1블록) 예시
+    uint64_t prp2_phys = queue_phys_base + 0x10000;
+    uint8_t *prp2_virt = (uint8_t *)(huge_base + 0x10000);
+
+    uint64_t io_buf_phys = queue_phys_base + 0x5000;
+    uint8_t *io_buf_virt = (uint8_t *)(huge_base + 0x5000);
+    memset(io_buf_virt, 0x30, 4 * 4096);  // 4096바이트(1블록) 예시
     
     uint32_t tail = io_sq_tail[0][1];
 
@@ -822,45 +836,36 @@ int main(int argc, char **argv)
     ip.write_register(0x40, (FPGA_SQ_DOORBELL_BASE) & 0xFFFFFFFF);    
     ip.write_register(0x44, (FPGA_SQ_DOORBELL_BASE >> 32) & 0xFFFFFFFF);
 
+    ip.write_register(0x68, (prp2_phys) & 0xFFFFFFFF);    
+    ip.write_register(0x6c, (prp2_phys >> 32) & 0xFFFFFFFF);
+
+    ip.write_register(0x74, (FPGA_PRP_BASE) & 0xFFFFFFFF);    //prp2_vaddr1
+    ip.write_register(0x78, (FPGA_PRP_BASE >> 32) & 0xFFFFFFFF); //prp2_vaddr2
+
     sleep(1);
 
     volatile uint32_t *cq_hdbell =
     (uint32_t *)(ssd_virt_base[0] + 0x1000 + (2 * 1 + 1) * 4);
 
-    auto packet_generator_run = packet_generator_krnl(0x1, 140, 1, io_buf_phys, 2);
+    auto packet_generator_run = packet_generator_krnl(0x1, 200, 4, io_buf_phys, 1);
     packet_generator_run.wait();
 
+    sleep(1);
+    *cq_hdbell = 1;
+
+    memset(io_buf_virt, 0x31, 5 * 4096);  // 
+
+    packet_generator_run = packet_generator_krnl(0x1, 150, 5, io_buf_phys, 1);
+    packet_generator_run.wait();
+     
     sleep(1);
     *cq_hdbell = 2;
 
-    packet_generator_run = packet_generator_krnl(0x1, 150, 1, io_buf_phys, 2);
-    packet_generator_run.wait();
-    
-    sleep(1);
-    *cq_hdbell = 4;
+    printf("mem addr : %p", prp2_phys);
+    print_mem((uint64_t*)prp2_virt, 10);
+    print_io_sq(0, 2);
+    print_io_cq(0, 2);
 
-    packet_generator_run = packet_generator_krnl(0x1, 1600, 1, io_buf_phys, 2);
-    packet_generator_run.wait();
-
-    sleep(1);
-    *cq_hdbell = 6;
-
-    // ip.write_register(0x4c, io_buf_phys & 0xFFFFFFFF);
-    // ip.write_register(0x50, (io_buf_phys >> 32) & 0xFFFFFFFF);
-
-    // ip.write_register(0x58, 0x1);
-    // ip.write_register(0x60, 0);
-    // ip.write_register(0x68, 1);
-    // ip.write_register(0x70, 1);
-
-
-
-    
-    sleep(1);
-    print_io_sq(0, 10);
-    print_io_cq(0, 10);    
-
-    
     munmap((void*)ssd_virt_base[0], MAP_SIZE);
     munmap(huge_base, HUGEPAGE_SIZE);
 

@@ -12,6 +12,7 @@ void nvme_io_cmd_gen(
 )
 {
     #pragma HLS INLINE off
+    #pragma HLS PIPELINE II=1
     if (!request_packet_stream.empty()) 
     {
         struct request_packet req = request_packet_stream.read();
@@ -94,12 +95,14 @@ void nvme_io_sqe_dbl_write(
     #pragma HLS INLINE off
     if (!nvme_io_command_stream.empty()) {
         nvme_io_command_t cmd = nvme_io_command_stream.read();
+        
+        // TODO: Update mgmt table
+
         // io_sq_base_address[sq_tail] = cmd;
         *(&io_sq_base_address[sq_tail])  = cmd;
         sq_tail = (sq_tail + 1) % IO_QUEUE_MAX_DEPTH;
         dbl_base_address[2] = sq_tail;
     }
-
 }
 
 void nvme_io_submit(

@@ -29,3 +29,7 @@ _x*
 !x3h/rx_exerciser_tx_passthrough/pcaprecv.txt
 !x3h/rx_exerciser_tx_passthrough/pcapsend.txt
 
+
+solution1/
+nvme_driver_top/
+process_request/

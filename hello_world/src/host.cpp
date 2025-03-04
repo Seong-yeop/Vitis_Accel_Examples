@@ -23,6 +23,7 @@
 #define HUGEPAGE_SIZE (2 * 1024 * 1024)
 #define HUGEPAGE_FILE "/sys/kernel/hugepage_info/hugepage_phys"
 #define NVME_RESOURCE_FILE "/sys/bus/pci/devices/0000:af:00.0/resource"
+#define NVME_RESOURCE_FILE "/sys/bus/pci/devices/0000:af:00.0/resource"
 
 #define SSD_ADMIN_SQ_PHYS_BASE(ssd_id) ((queue_phys_base) + 0x2000 * (ssd_id))
 #define SSD_ADMIN_CQ_PHYS_BASE(ssd_id) ((queue_phys_base) + 0x2000 * (ssd_id) + 0x1000)

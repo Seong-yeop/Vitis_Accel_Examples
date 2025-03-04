@@ -22,7 +22,7 @@
 
 #define HUGEPAGE_SIZE (2 * 1024 * 1024)
 #define HUGEPAGE_FILE "/sys/kernel/hugepage_info/hugepage_phys"
-#define NVME_RESOURCE_FILE "/sys/bus/pci/devices/0000:18:00.0/resource"
+#define NVME_RESOURCE_FILE "/sys/bus/pci/devices/0000:af:00.0/resource"
 
 #define SSD_ADMIN_SQ_PHYS_BASE(ssd_id) ((queue_phys_base) + 0x2000 * (ssd_id))
 #define SSD_ADMIN_CQ_PHYS_BASE(ssd_id) ((queue_phys_base) + 0x2000 * (ssd_id) + 0x1000)
@@ -809,7 +809,7 @@ int main(int argc, char **argv)
  
     uint64_t io_buf_phys = queue_phys_base + 0x10000;
     uint8_t *io_buf_virt = (uint8_t *)(huge_base + 0x10000);
-    memset(io_buf_virt, 0x39, 16384);  // 4096바이트(1블록) 예시
+    memset(io_buf_virt, 0x37, 16384);  // 4096바이트(1블록) 예시
     
     uint32_t tail = io_sq_tail[0][1];
 
@@ -830,20 +830,20 @@ int main(int argc, char **argv)
     auto packet_generator_run = packet_generator_krnl(0x1, 140, 1, io_buf_phys, 2);
     packet_generator_run.wait();
 
-    sleep(1);
-    *cq_hdbell = 2;
+    // sleep(1);
+    // *cq_hdbell = 2;
 
     packet_generator_run = packet_generator_krnl(0x1, 150, 1, io_buf_phys, 2);
     packet_generator_run.wait();
     
-    sleep(1);
-    *cq_hdbell = 4;
+    // sleep(1);
+    // *cq_hdbell = 4;
 
     packet_generator_run = packet_generator_krnl(0x1, 1600, 1, io_buf_phys, 2);
     packet_generator_run.wait();
 
-    sleep(1);
-    *cq_hdbell = 6;
+    // sleep(1);
+    // *cq_hdbell = 6;
 
     // ip.write_register(0x4c, io_buf_phys & 0xFFFFFFFF);
     // ip.write_register(0x50, (io_buf_phys >> 32) & 0xFFFFFFFF);

@@ -2,23 +2,21 @@
 
 
 void nvme_process_cpl(
-    nvmd_cqe_t *io_cq_base_addr,
-    uint32_t *dbl_base_address,
+    nvme_cqe_t *io_cq_base_addr,
+    uint32_t *dbl_base_address2,
     
     uint32_t &completed_requests_count,  
     uint32_t &completed_requests_bytes
 ) 
 {
-    // #pragma HLS PIPELINE II=1
     enum class cq_state {IDLE, READ_ENTRY, UPDATE_HEAD, COMPLETION};
 
-    // static uint32_t cq_tail, // CQ Tail 
     static uint32_t cq_head = 0; // CQ Head
     static uint8_t cq_phase = 0; // CQ Phase   
     static cq_state state = cq_state::IDLE; 
     static uint32_t delay_counter = 0;
     
-    static struct nvme_cqe_t cqe;
+    static nvme_cqe_t cqe;
 
     switch (state) {
         case cq_state::IDLE:
@@ -43,7 +41,7 @@ void nvme_process_cpl(
 
         case cq_state::UPDATE_HEAD:
             cq_head = cq_head + 1;
-            if (cq_head == cq_size) {
+            if (cq_head == IO_QUEUE_MAX_DEPTH) {
                 cq_head = 0;
                 cq_phase = !cq_phase;
             }
@@ -51,10 +49,11 @@ void nvme_process_cpl(
             break;
         
         case cq_state::COMPLETION:
-            nvme_cqh_dbl[0] = cq_head;
+            dbl_base_address2[3] = cq_head;
             completed_requests_count++;
             // TODO: Update completed_requests_bytes based on ID management table
-            state = cq_state::IDLE;
+            
+            state = cq_state::READ_ENTRY;
             break;
     } 
 }

@@ -13,6 +13,7 @@ extern "C" {
         nvme_cqe_t *io_cq_base_addr, // CQ base address
         nvme_io_command_t *io_sq_base_addr, // SQ base address
         uint32_t *dbl_base_address, // Doorbell base address
+        uint32_t *dbl_base_address2, // Doorbell base address
         uint64_t *buffer_base_address,
 
         hls::stream<struct request_packet> &request_packet_stream,
@@ -26,6 +27,7 @@ extern "C" {
         #pragma HLS INTERFACE m_axi port=io_cq_base_addr offset=slave bundle=gmem0
         #pragma HLS INTERFACE m_axi port=io_sq_base_addr offset=slave bundle=gmem0
         #pragma HLS INTERFACE m_axi port=dbl_base_address offset=slave bundle=gmem0
+        #pragma HLS INTERFACE m_axi port=dbl_base_address2 offset=slave bundle=gmem1
         #pragma HLS INTERFACE m_axi port=buffer_base_address offset=slave bundle=gmem1
 
         #pragma HLS INTERFACE s_axilite port=start 
@@ -43,6 +45,15 @@ extern "C" {
         // static hls::stream<struct request_packet> request_packet_stream("request_packet_stream");
         // #pragma HLS STREAM variable=request_packet_stream depth=512
 
+        static hls::stream<struct mgmt_table_req> submit_in_req("submit_in_req");
+        #pragma HLS STREAM variable=submit_in_req depth=512
+        static hls::stream<struct mgmt_table_resp> submit_out_resp("submit_out_resp");
+        #pragma HLS STREAM variable=submit_out_resp depth=512
+        static hls::stream<struct mgmt_table_req> cpl_in_req("cpl_in_req");
+        #pragma HLS STREAM variable=cpl_in_req depth=512
+        static hls::stream<struct mgmt_table_resp> cpl_out_resp("cpl_out_resp");
+        #pragma HLS STREAM variable=cpl_out_resp depth=512
+
         static uint32_t sq_tail = 0;
         static uint32_t sq_head = 0;
         static uint32_t cq_tail = 0;
@@ -56,7 +67,28 @@ extern "C" {
             dbl_base_address, 
             buffer_base_address,
             sq_tail, 
-            request_packet_stream
+            request_packet_stream,
+            submit_in_req,
+            submit_out_resp
         );
+        
+        // Table
+        mgmt_table(
+            submit_in_req,
+            submit_out_resp,
+            cpl_in_req,
+            cpl_out_resp
+        );
+
+        // CQ polling 
+        nvme_process_cpl(
+            io_cq_base_addr,
+            dbl_base_address2,
+            cpl_in_req,
+            cpl_out_resp,
+            completed_request_number,
+            completed_request_bytes
+        );
+
     }
 }

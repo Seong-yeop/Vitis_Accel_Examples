@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <hls_stream.h>
+#include <ap_int.h>
 
 #define DELAY_CYCLES 1000
 
@@ -20,6 +21,8 @@
 /// NVMe I/O command opcode
 #define NVME_IO_WRITE 0x01
 #define NVME_IO_READ  0x02
+
+#define MAX_CMD_INFO_TBL_SIZE 1024
 
 // NVMe I/O command
 typedef struct _nvme_io_command
@@ -72,7 +75,7 @@ typedef struct _nvme_io_command
 } nvme_io_command_t;
 
 
-typedef struct _nvme_cqe
+typedef struct _nvme_cqe_t
 {
     // -- DW0 --
     uint16_t command_specific_0;  ///< [15:0]   명령별/추가정보
@@ -139,21 +142,32 @@ struct completion_packet {
 };
 
 struct cmd_info {
-    uint8_t used;
-    uint32_t cid;
-    uint16_t opc;
-    uint64_t slba;
-    uint32_t nlb;
-    uint64_t buffer_addr;
+    ap_uint<1> valid;
+    ap_uint<16> qid;
+    ap_uint<16> cid;
+    ap_uint<8> opc;
+    ap_uint<64> slba;
+    ap_uint<32> nlb;
+    ap_uint<64> prp1;
 };
 
-// void nvme_process_cpl(
-//     uint32_t *cq_base_addr, // CQ Base Address
-//     uint32_t &cq_id, // CQ ID
-//     uint32_t &cq_size, // CQ Depth
-//     volatile uint32_t *nvme_cqh_dbl
-// );  
+void mgmt_table(
+    hls::stream<mgmt_table_req>  &submit_in_req,
+    hls::stream<mgmt_table_resp> &submit_out_resp
+    hls::stream<mgmt_table_req>  &cpl_in_req,
+    hls::stream<mgmt_table_resp> &cpl_out_resp
+);
 
+struct mgmt_table_req {
+    ap_uint<4>   op;    // op: 0=read, 1=write, 2=clear
+    ap_uint<16> cid;  // CID 
+    struct cmd_info   wdata; // write data  
+};
+
+struct mgmt_table_resp {
+    struct cmd_info rdata;   
+    ap_uint<1> status;
+};
 
 extern "C" {
 void packet_generator(
@@ -175,6 +189,19 @@ void nvme_io_submit(
     hls::stream<struct request_packet> &request_packet_stream
 );
 
+void nvme_process_cpl(
+    nvme_cqe_t *io_cq_base_addr,
+    uint32_t *dbl_base_address2,
+    
+    uint32_t &completed_requests_count,  
+    uint32_t &completed_requests_bytes
+);
+
+void mgmt_table(
+    hls::stream<mgmt_table_req>  &in_req,
+    hls::stream<mgmt_table_resp> &out_resp
+);
+
 extern "C" {
     void nvme_driver_top(
         uint32_t &start,
@@ -184,6 +211,7 @@ extern "C" {
         nvme_cqe_t *io_cq_base_addr, // CQ base address
         nvme_io_command_t *io_sq_base_addr, // SQ base address
         uint32_t *dbl_base_address, // Doorbell base address
+        uint32_t *dbl_base_address2, // Doorbell base address
         uint64_t *buffer_base_address,
 
         hls::stream<struct request_packet> &request_packet_stream,

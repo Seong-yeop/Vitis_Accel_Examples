@@ -12,7 +12,6 @@ void nvme_io_cmd_gen(
 )
 {
     #pragma HLS INLINE off
-    #pragma HLS PIPELINE II=1
     if (!request_packet_stream.empty()) 
     {
         struct request_packet req = request_packet_stream.read();
@@ -71,72 +70,167 @@ void nvme_mgmt_prp(
         }
         else{
             cmd.prp2 = prp2_physical_address + (entry * 0x1000);
+            // #pragma HLS PIPELINE II=1
             for(int i = 0; i < cmd.cdw12; i++){
                 *(&prp2_virtual_address[entry * 512 + i]) = cmd.prp1 + ((i+1) * 0x1000);
             }
             entry = (entry + 1) % IO_QUEUE_MAX_DEPTH;
-
         }
-
         nvme_io_command_stream.write(cmd);
     }
-
-
-
 }
+
+// void nvme_io_sqe_dbl_write(
+//     nvme_io_command_t *io_sq_base_address,
+//     uint32_t *dbl_base_address,
+//     uint32_t &sq_tail,
+//     hls::stream<nvme_io_command_t> &nvme_io_command_stream,
+//     hls::stream<struct mgmt_table_req> &submit_in_req,
+//     hls::stream<struct mgmt_table_resp> &submit_out_resp
+// ) 
+// {
+//     #pragma HLS INLINE off
+//     if (!nvme_io_command_stream.empty()) {
+//         nvme_io_command_t cmd = nvme_io_command_stream.read();
+        
+//         // // TODO: Update mgmt table
+//         struct mgmt_table_req req;
+//         struct cmd_info wdata;
+//         struct mgmt_table_resp resp;
+
+//         wdata.valid = true;
+//         wdata.opc = cmd.opc;
+//         wdata.cid = cmd.cid;
+//         wdata.qid = 0;
+//         wdata.slba = ((cmd.cdw11 << 32) | cmd.cdw10);
+//         wdata.nlb = cmd.cdw12;
+//         wdata.prp1 = cmd.prp1;
+
+//         req.op = 1;
+//         req.cid = cmd.cid;
+//         req.wdata = wdata;
+
+//         submit_in_req.write(req); 
+//         resp = submit_out_resp.read(); 
+
+//         // FSM 
+//         // not empty check 
+
+//         // or Split 
+
+//         *(&io_sq_base_address[sq_tail])  = cmd;
+//         sq_tail = (sq_tail + 1) % IO_QUEUE_MAX_DEPTH;
+//         dbl_base_address[2] = sq_tail;
+//     }
+// }
 
 void nvme_io_sqe_dbl_write(
     nvme_io_command_t *io_sq_base_address,
     uint32_t *dbl_base_address,
     uint32_t &sq_tail,
-    hls::stream<nvme_io_command_t> &nvme_io_command_stream
+    hls::stream<nvme_io_command_t> &nvme_io_command_stream,
+    hls::stream<struct mgmt_table_req> &submit_in_req,
+    hls::stream<struct mgmt_table_resp> &submit_out_resp
 ) 
 {
-    #pragma HLS INLINE off
-    if (!nvme_io_command_stream.empty()) {
-        nvme_io_command_t cmd = nvme_io_command_stream.read();
-        
-        // TODO: Update mgmt table
+#pragma HLS INLINE off
+#pragma HLS INTERFACE ap_ctrl_none port=return
 
-        // io_sq_base_address[sq_tail] = cmd;
-        *(&io_sq_base_address[sq_tail])  = cmd;
-        sq_tail = (sq_tail + 1) % IO_QUEUE_MAX_DEPTH;
-        dbl_base_address[2] = sq_tail;
+    enum fsm_state {IDLE, SEND_REQ, WAIT_RESP, WRITE_MEM};
+
+    static fsm_state state = IDLE;
+#pragma HLS RESET variable=state
+
+    static nvme_io_command_t cmd;
+    static struct mgmt_table_req req;
+    static struct cmd_info wdata;
+    static struct mgmt_table_resp resp;
+
+    switch (state)
+    {
+        case IDLE:
+            if (!nvme_io_command_stream.empty()) {
+                cmd = nvme_io_command_stream.read();
+
+                wdata.valid = true;
+                wdata.opc = cmd.opc;
+                wdata.cid = cmd.cid;
+                wdata.qid = 0;
+                wdata.slba = ((uint64_t)cmd.cdw11 << 32) | cmd.cdw10;
+                wdata.nlb = cmd.cdw12;
+                wdata.prp1 = cmd.prp1;
+
+                req.op = 1;
+                req.cid = cmd.cid;
+                req.wdata = wdata;
+
+                state = SEND_REQ;
+            }
+            break;
+
+        case SEND_REQ:
+            if (!submit_in_req.full()) {
+                submit_in_req.write(req);
+                state = WAIT_RESP;
+            }
+            break;
+
+        case WAIT_RESP:
+            if (!submit_out_resp.empty()) {
+                resp = submit_out_resp.read();
+                state = WRITE_MEM;
+            }
+            break;
+
+        case WRITE_MEM:
+            *(&io_sq_base_address[sq_tail]) = cmd;
+            sq_tail = (sq_tail + 1) % IO_QUEUE_MAX_DEPTH;
+            dbl_base_address[2] = sq_tail;
+
+            state = IDLE;
+            break;
     }
 }
 
-void nvme_io_submit(
-    nvme_io_command_t* io_sq_base_address,
-    nvme_cqe_t *io_cq_base_address,
-    uint32_t *dbl_base_address,
-    uint64_t *buffer_base_address,
-    uint32_t &sq_tail,
-    uint64_t prp2_physical_address,
-    uint64_t* prp2_virtual_address,
-    hls::stream<struct request_packet> &request_packet_stream
-)
-{
-    #pragma HLS DATAFLOW
-    
-    static hls::stream<nvme_io_command_t> nvme_prp_req_stream;
-    static hls::stream<nvme_io_command_t> nvme_io_command_stream;
+// void nvme_io_submit(
+//     nvme_io_command_t* io_sq_base_address,
+//     nvme_cqe_t *io_cq_base_address,
+//     uint32_t *dbl_base_address,
+//     uint64_t *buffer_base_address,
+//     uint32_t &sq_tail,
+//     uint64_t prp2_physical_address,
+//     uint64_t* prp2_virtual_address,
+//     hls::stream<struct request_packet> &request_packet_stream,
+//     hls::stream<struct mgmt_table_req> &submit_in_req,
+//     hls::stream<struct mgmt_table_resp> &submit_out_resp
+// )
+// {
+//     #pragma HLS INTERFACE ap_ctrl_none port=return
+//     #pragma HLS DATAFLOW disable_start_propagation
 
-    nvme_io_cmd_gen(
-        request_packet_stream,
-        nvme_prp_req_stream  
-    );
+//     static hls::stream<nvme_io_command_t> nvme_prp_req_stream;
+//     #pragma HLS STREAM variable=nvme_prp_req_stream depth=512
+//     static hls::stream<nvme_io_command_t> nvme_io_command_stream;
+//     #pragma HLS STREAM variable=nvme_io_command_stream depth=512
 
-    nvme_mgmt_prp(
-        nvme_prp_req_stream,
-        prp2_physical_address,
-        prp2_virtual_address,
-        nvme_io_command_stream
-    );
+//     nvme_io_cmd_gen(
+//         request_packet_stream,
+//         nvme_prp_req_stream  
+//     );
 
-    nvme_io_sqe_dbl_write(
-        io_sq_base_address,
-        dbl_base_address,
-        sq_tail,
-        nvme_io_command_stream
-    );
-}
+//     nvme_mgmt_prp(
+//         nvme_prp_req_stream,
+//         prp2_physical_address,
+//         prp2_virtual_address,
+//         nvme_io_command_stream
+//     );
+
+//     nvme_io_sqe_dbl_write(
+//         io_sq_base_address,
+//         dbl_base_address,
+//         sq_tail,
+//         nvme_io_command_stream,
+//         submit_in_req,
+//         submit_out_resp
+//     );
+// }

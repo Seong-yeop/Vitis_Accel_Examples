@@ -1,9 +1,12 @@
 #ifndef NVME_PROCESS_CPL_H
 #define NVME_PROCESS_CPL_H
 
-#include <stdint.h>
+#include <gmp.h> 
+#define __gmp_const const
+
 #include <hls_stream.h>
 #include <ap_int.h>
+#include <stdint.h>
 
 #define DELAY_CYCLES 1000
 
@@ -22,7 +25,7 @@
 #define NVME_IO_WRITE 0x01
 #define NVME_IO_READ  0x02
 
-#define MAX_CMD_INFO_TBL_SIZE 1024
+#define MAX_CMD_INFO_TBL_SIZE 256
 
 // NVMe I/O command
 typedef struct _nvme_io_command
@@ -151,13 +154,6 @@ struct cmd_info {
     ap_uint<64> prp1;
 };
 
-void mgmt_table(
-    hls::stream<mgmt_table_req>  &submit_in_req,
-    hls::stream<mgmt_table_resp> &submit_out_resp
-    hls::stream<mgmt_table_req>  &cpl_in_req,
-    hls::stream<mgmt_table_resp> &cpl_out_resp
-);
-
 struct mgmt_table_req {
     ap_uint<4>   op;    // op: 0=read, 1=write, 2=clear
     ap_uint<16> cid;  // CID 
@@ -168,6 +164,15 @@ struct mgmt_table_resp {
     struct cmd_info rdata;   
     ap_uint<1> status;
 };
+
+void mgmt_table(
+    hls::stream<mgmt_table_req>  &submit_in_req
+    // hls::stream<mgmt_table_resp> &submit_out_resp
+    // hls::stream<mgmt_table_req>  &cpl_in_req,
+    // hls::stream<mgmt_table_resp> &cpl_out_resp
+);
+
+
 
 extern "C" {
 void packet_generator(
@@ -180,28 +185,56 @@ void packet_generator(
 );
 }
 
-void nvme_io_submit(
-    nvme_io_command_t* io_sq_base_address,
-    nvme_cqe_t *io_cq_base_address,
+// void nvme_io_submit(
+//     nvme_io_command_t* io_sq_base_address,
+//     nvme_cqe_t *io_cq_base_address,
+//     uint32_t *dbl_base_address,
+//     uint64_t *buffer_base_address,
+//     uint32_t &sq_tail,
+//     uint64_t prp2_physical_address,
+//     uint64_t* prp2_virtual_address,
+//     hls::stream<struct request_packet> &request_packet_stream,
+//     hls::stream<struct mgmt_table_req> &submit_in_req,
+//     hls::stream<struct mgmt_table_resp> &submit_out_resp
+// );
+
+void nvme_io_sqe_dbl_write(
+    nvme_io_command_t *io_sq_base_address,
     uint32_t *dbl_base_address,
-    uint64_t *buffer_base_address,
     uint32_t &sq_tail,
+    hls::stream<nvme_io_command_t> &nvme_io_command_stream,
+    hls::stream<struct mgmt_table_req> &submit_in_req,
+    hls::stream<struct mgmt_table_resp> &submit_out_resp
+);
+
+
+void nvme_io_cmd_gen(
+    hls::stream<struct request_packet> &request_packet_stream,
+    hls::stream<nvme_io_command_t> &nvme_prp_req_stream
+);
+
+void nvme_mgmt_prp(
+    hls::stream<nvme_io_command_t> &nvme_prp_req_stream,
     uint64_t prp2_physical_address,
     uint64_t* prp2_virtual_address,
-    hls::stream<struct request_packet> &request_packet_stream
+    hls::stream<nvme_io_command_t> &nvme_io_command_stream
 );
 
 void nvme_process_cpl(
     nvme_cqe_t *io_cq_base_addr,
-    uint32_t *dbl_base_address2,
-    
+    uint32_t *dbl_base_address,
     uint32_t &completed_requests_count,  
-    uint32_t &completed_requests_bytes
+    uint32_t &completed_requests_bytes,
+    hls::stream<struct mgmt_table_req> &cpl_in_req,
+    hls::stream<struct mgmt_table_resp> &cpl_out_resp
 );
 
 void mgmt_table(
-    hls::stream<mgmt_table_req>  &in_req,
-    hls::stream<mgmt_table_resp> &out_resp
+    hls::stream<struct mgmt_table_req>  &submit_in_req,
+    hls::stream<struct mgmt_table_resp> &submit_out_resp,
+    uint32_t &completed_request_bytes
+    // hls::stream<struct mgmt_table_req>  &cpl_in_req,
+    // hls::stream<struct mgmt_table_resp> &cpl_out_resp
 );
 
 extern "C" {

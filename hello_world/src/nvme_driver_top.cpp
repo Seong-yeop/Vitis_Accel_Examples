@@ -24,28 +24,20 @@ extern "C" {
         uint64_t* prp2_virtual_address
     )
     {
+        #pragma HLS DATAFLOW disable_start_propagation
         #pragma HLS INTERFACE ap_ctrl_none port=return
 
         #pragma HLS INTERFACE m_axi port=io_cq_base_addr offset=slave bundle=gmem0
-        #pragma HLS INTERFACE m_axi port=io_sq_base_addr offset=slave bundle=gmem0
-        #pragma HLS INTERFACE m_axi port=dbl_base_address offset=slave bundle=gmem0
-        #pragma HLS INTERFACE m_axi port=dbl_base_address2 offset=slave bundle=gmem1
-        #pragma HLS INTERFACE m_axi port=buffer_base_address offset=slave bundle=gmem1
+        #pragma HLS INTERFACE m_axi port=io_sq_base_addr offset=slave bundle=gmem1
+        #pragma HLS INTERFACE m_axi port=dbl_base_address offset=slave bundle=gmem2
+        #pragma HLS INTERFACE m_axi port=dbl_base_address2 offset=slave bundle=gmem3
+        #pragma HLS INTERFACE m_axi port=buffer_base_address offset=slave bundle=gmem4
 
         #pragma HLS INTERFACE s_axilite port=start 
         #pragma HLS INTERFACE s_axilite port=done 
         #pragma HLS INTERFACE s_axilite port=done_ack 
 
         #pragma HLS INTERFACE m_axi port=request_packet_stream
-
-        // #pragma HLS INTERFACE s_axilite port=opcode 
-        // #pragma HLS INTERFACE s_axilite port=lba 
-        // #pragma HLS INTERFACE s_axilite port=nlba 
-        // #pragma HLS INTERFACE s_axilite port=prp1 
-        // #pragma HLS INTERFACE s_axilite port=request_count 
-
-        // static hls::stream<struct request_packet> request_packet_stream("request_packet_stream");
-        // #pragma HLS STREAM variable=request_packet_stream depth=512
 
         static hls::stream<struct mgmt_table_req> submit_in_req("submit_in_req");
         #pragma HLS STREAM variable=submit_in_req depth=512
@@ -61,28 +53,63 @@ extern "C" {
         static uint32_t cq_tail = 0;
         static uint32_t cq_head = 0;
     
-        #pragma HLS DATAFLOW
+        
+        // nvme_io_submit(
+        //     io_sq_base_addr, 
+        //     io_cq_base_addr, 
+        //     dbl_base_address, 
+        //     buffer_base_address,
+        //     sq_tail, 
+        //     prp2_physical_address,
+        //     prp2_virtual_address,
+        //     request_packet_stream,
+        //     submit_in_req,
+        //     submit_out_resp
+        // );
 
-        nvme_io_submit(
-            io_sq_base_addr, 
-            io_cq_base_addr, 
-            dbl_base_address, 
-            buffer_base_address,
-            sq_tail, 
-            prp2_physical_address,  
-            prp2_virtual_address,           
-            request_packet_stream
+
+        static hls::stream<nvme_io_command_t> nvme_prp_req_stream;
+        #pragma HLS STREAM variable=nvme_prp_req_stream depth=512
+        static hls::stream<nvme_io_command_t> nvme_io_command_stream;
+        #pragma HLS STREAM variable=nvme_io_command_stream depth=512
+            
+        nvme_io_cmd_gen(
+            request_packet_stream,
+            nvme_prp_req_stream  
+        );
+
+        nvme_mgmt_prp(
+            nvme_prp_req_stream,
+            prp2_physical_address,
+            prp2_virtual_address,
+            nvme_io_command_stream
+        );
+
+        nvme_io_sqe_dbl_write(
+            io_sq_base_addr,
+            dbl_base_address,
+            sq_tail,
+            nvme_io_command_stream,
+            submit_in_req,
+            submit_out_resp
+        );
+        
+        mgmt_table(
+            submit_in_req,
+            submit_out_resp,
+            completed_request_bytes
+            // cpl_in_req,
+            // cpl_out_resp
         );
 
         // CQ polling 
-        nvme_process_cpl(
-            io_cq_base_addr,
-            dbl_base_address2,
-            cpl_in_req,
-            cpl_out_resp,
-            completed_request_number,
-            completed_request_bytes
-        );
-
+        // nvme_process_cpl(
+        //     io_cq_base_addr,
+        //     dbl_base_address2,
+        //     completed_request_number,
+        //     completed_request_bytes,
+        //     cpl_in_req,
+        //     cpl_out_resp
+        // );
     }
 }

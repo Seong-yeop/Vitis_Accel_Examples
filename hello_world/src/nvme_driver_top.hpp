@@ -8,7 +8,6 @@
 #include <ap_int.h>
 #include <stdint.h>
 
-#define DELAY_CYCLES 1000
 
 // NVMe I/O Opcode
 #define NVME_OPC_WRITE  0x01
@@ -81,29 +80,21 @@ typedef struct _nvme_io_command
 typedef struct _nvme_cqe_t
 {
     // -- DW0 --
-    uint16_t command_specific_0;  ///< [15:0]   명령별/추가정보
-    uint16_t reserved0;           ///< [31:16]  Reserved
+    uint32_t dw0; // Command Specific
 
     // -- DW1 --
-    uint16_t command_specific_1;  ///< [15:0]   명령별/추가정보
-    uint16_t sq_head_ptr;         ///< [31:16]  Submission Queue Head Pointer (SQHD)
+    uint32_t dw1; // Reserved 
 
     // -- DW2 --
-    uint16_t cid;                 ///< [15:0]   Command Identifier
-    uint16_t sq_id;               ///< [31:16]  Submission Queue Identifier
+    uint16_t sq_head;                 
+    uint16_t sq_identifier;               
 
     // -- DW3 --
-    union {
-        uint32_t raw;             ///< DW3 전체를 32비트로 접근할 때
-        struct {
-            uint32_t dnr       : 1;  ///< bit[0]   = Do Not Retry
-            uint32_t sc        : 7;  ///< bit[7:1] = Status Code
-            uint32_t sct       : 3;  ///< bit[10:8]= Status Code Type
-            uint32_t reserved1 : 5;  ///< bit[15:11]
-            uint32_t p         : 1;  ///< bit[16]  = Phase Tag
-            uint32_t reserved2 : 15; ///< bit[31:17]
-        };
-    } dw3;                         ///< [31:0]   DW3
+    uint16_t cid;       // Command Identifier (CID)
+    uint32_t phase_tag  :1;     // Phase Tag (P)
+    uint32_t status_code:8;     // Status Code
+    uint32_t sct        :3;     // Status Code Type (SCT)
+    uint32_t reserved   :4;     // Reserved
 
 } nvme_cqe_t;
 
@@ -185,40 +176,21 @@ void packet_generator(
 );
 }
 
-// void nvme_io_submit(
-//     nvme_io_command_t* io_sq_base_address,
-//     nvme_cqe_t *io_cq_base_address,
-//     uint32_t *dbl_base_address,
-//     uint64_t *buffer_base_address,
-//     uint32_t &sq_tail,
-//     uint64_t prp2_physical_address,
-//     uint64_t* prp2_virtual_address,
-//     hls::stream<struct request_packet> &request_packet_stream,
-//     hls::stream<struct mgmt_table_req> &submit_in_req,
-//     hls::stream<struct mgmt_table_resp> &submit_out_resp
-// );
-
-void nvme_io_sqe_dbl_write(
-    nvme_io_command_t *io_sq_base_address,
+void nvme_io_submit(
+    nvme_io_command_t* io_sq_base_address,
+    nvme_cqe_t *io_cq_base_address,
     uint32_t *dbl_base_address,
+    uint64_t *buffer_base_address,
     uint32_t &sq_tail,
-    hls::stream<nvme_io_command_t> &nvme_io_command_stream,
-    hls::stream<struct mgmt_table_req> &submit_in_req,
-    hls::stream<struct mgmt_table_resp> &submit_out_resp
-);
-
-
-void nvme_io_cmd_gen(
-    hls::stream<struct request_packet> &request_packet_stream,
-    hls::stream<nvme_io_command_t> &nvme_prp_req_stream
-);
-
-void nvme_mgmt_prp(
-    hls::stream<nvme_io_command_t> &nvme_prp_req_stream,
     uint64_t prp2_physical_address,
     uint64_t* prp2_virtual_address,
-    hls::stream<nvme_io_command_t> &nvme_io_command_stream
+    hls::stream<struct request_packet> &request_packet_stream,
+    hls::stream<struct mgmt_table_req> &submit_in_req,
+    hls::stream<struct mgmt_table_resp> &submit_out_resp,
+    hls::stream<uint32_t> &nvme_cq_polling_stream,
+    hls::stream<uint32_t> &sq_head_stream_read
 );
+
 
 void nvme_process_cpl(
     nvme_cqe_t *io_cq_base_addr,
@@ -226,15 +198,18 @@ void nvme_process_cpl(
     uint32_t &completed_requests_count,  
     uint32_t &completed_requests_bytes,
     hls::stream<struct mgmt_table_req> &cpl_in_req,
-    hls::stream<struct mgmt_table_resp> &cpl_out_resp
-);
+    hls::stream<struct mgmt_table_resp> &cpl_out_resp,
+    hls::stream<uint32_t> &nvme_cq_polling_stream,
+    hls::stream<uint32_t> &sq_head_stream_write
+); 
 
 void mgmt_table(
     hls::stream<struct mgmt_table_req>  &submit_in_req,
     hls::stream<struct mgmt_table_resp> &submit_out_resp,
-    uint32_t &completed_request_bytes
-    // hls::stream<struct mgmt_table_req>  &cpl_in_req,
-    // hls::stream<struct mgmt_table_resp> &cpl_out_resp
+    hls::stream<struct mgmt_table_req>  &cpl_in_req,
+    hls::stream<struct mgmt_table_resp> &cpl_out_resp,
+    hls::stream<uint32_t> &sq_head_stream_write,
+    hls::stream<uint32_t> &sq_head_stream_read
 );
 
 extern "C" {

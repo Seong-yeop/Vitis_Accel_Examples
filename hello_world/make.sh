@@ -12,5 +12,5 @@ popd
 
 echo $XILINX_XRT
 
-make all
+make all -j 16
 

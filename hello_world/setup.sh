@@ -1,11 +1,11 @@
 #!/bin/bash
 
-XRT_PATH=/home/csl/yeop/XRT/build/Debug/opt/xilinx/xrt/bin
+XRT_PATH=/home/csl/heejae/XRT/build/Debug/opt/xilinx/xrt/bin
 
 echo -n "0000:d8:00.1" | sudo tee /sys/bus/pci/drivers/xocl/unbind
 rmmod xocl
 
-pushd /home/csl/yeop/XRT/build/Debug/usr/src/xrt-2.13.0/driver/xocl/userpf
+pushd /home/csl/heejae/XRT/build/Debug/usr/src/xrt-2.13.0/driver/xocl/userpf
 insmod xocl.ko
 
 sudo $XRT_PATH/xbutil configure --host-mem disable --device d8:00.1
@@ -15,9 +15,9 @@ source /opt/xilinx/xrt/setup.sh > /dev/null
 
 popd
 
-pushd /home/csl/yeop/XRT/build/Debug/opt/xilinx/xrt
+pushd /home/csl/heejae/XRT/build/Debug/opt/xilinx/xrt
 
-source /home/csl/yeop/XRT/build/Debug/opt/xilinx/xrt/setup.sh
+source /home/csl/heejae/XRT/build/Debug/opt/xilinx/xrt/setup.sh
 
 popd
 

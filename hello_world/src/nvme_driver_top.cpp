@@ -48,68 +48,61 @@ extern "C" {
         static hls::stream<struct mgmt_table_resp> cpl_out_resp("cpl_out_resp");
         #pragma HLS STREAM variable=cpl_out_resp depth=512
 
+        // static hls::stream<nvme_io_command_t> nvme_prp_req_stream;
+        // #pragma HLS STREAM variable=nvme_prp_req_stream depth=512
+        // static hls::stream<nvme_io_command_t> nvme_io_command_stream;
+        // #pragma HLS STREAM variable=nvme_io_command_stream depth=512
+            
+        static hls::stream<uint32_t> nvme_cq_polling_stream;
+        #pragma HLS STREAM variable=nvme_cq_polling_stream depth=512
+
+        static hls::stream<uint32_t> sq_head_stream_write;
+        #pragma HLS STREAM variable=sq_head_stream_write depth=512
+
+        static hls::stream<uint32_t> sq_head_stream_read;
+        #pragma HLS STREAM variable=sq_head_stream_read depth=512
+
+
         static uint32_t sq_tail = 0;
         static uint32_t sq_head = 0;
         static uint32_t cq_tail = 0;
-        static uint32_t cq_head = 0;
-    
-        
-        // nvme_io_submit(
-        //     io_sq_base_addr, 
-        //     io_cq_base_addr, 
-        //     dbl_base_address, 
-        //     buffer_base_address,
-        //     sq_tail, 
-        //     prp2_physical_address,
-        //     prp2_virtual_address,
-        //     request_packet_stream,
-        //     submit_in_req,
-        //     submit_out_resp
-        // );
+        static uint32_t cq_head = 0; 
 
 
-        static hls::stream<nvme_io_command_t> nvme_prp_req_stream;
-        #pragma HLS STREAM variable=nvme_prp_req_stream depth=512
-        static hls::stream<nvme_io_command_t> nvme_io_command_stream;
-        #pragma HLS STREAM variable=nvme_io_command_stream depth=512
-            
-        nvme_io_cmd_gen(
-            request_packet_stream,
-            nvme_prp_req_stream  
-        );
-
-        nvme_mgmt_prp(
-            nvme_prp_req_stream,
+        nvme_io_submit(
+            io_sq_base_addr,
+            io_cq_base_addr,
+            dbl_base_address,
+            buffer_base_address,
+            sq_tail,
             prp2_physical_address,
             prp2_virtual_address,
-            nvme_io_command_stream
-        );
-
-        nvme_io_sqe_dbl_write(
-            io_sq_base_addr,
-            dbl_base_address,
-            sq_tail,
-            nvme_io_command_stream,
+            request_packet_stream,
             submit_in_req,
-            submit_out_resp
+            submit_out_resp,
+            nvme_cq_polling_stream,
+            sq_head_stream_read
         );
         
         mgmt_table(
             submit_in_req,
             submit_out_resp,
-            completed_request_bytes
-            // cpl_in_req,
-            // cpl_out_resp
+            cpl_in_req,
+            cpl_out_resp,
+            sq_head_stream_write,
+            sq_head_stream_read
         );
 
-        // CQ polling 
-        // nvme_process_cpl(
-        //     io_cq_base_addr,
-        //     dbl_base_address2,
-        //     completed_request_number,
-        //     completed_request_bytes,
-        //     cpl_in_req,
-        //     cpl_out_resp
-        // );
+        //CQ polling 
+        nvme_process_cpl(
+            io_cq_base_addr,
+            dbl_base_address2,
+            completed_request_number,
+            completed_request_bytes,
+            cpl_in_req,
+            cpl_out_resp,
+            nvme_cq_polling_stream,
+            sq_head_stream_write
+        );
     }
 }

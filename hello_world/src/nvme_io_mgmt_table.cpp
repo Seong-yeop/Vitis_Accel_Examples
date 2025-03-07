@@ -100,30 +100,43 @@
 void mgmt_table(
     hls::stream<struct mgmt_table_req>  &submit_in_req,
     hls::stream<struct mgmt_table_resp> &submit_out_resp,
-    uint32_t &completed_request_bytes
-    // hls::stream<struct mgmt_table_req>  &cpl_in_req,
-    // hls::stream<struct mgmt_table_resp> &cpl_out_resp
+    hls::stream<struct mgmt_table_req>  &cpl_in_req,
+    hls::stream<struct mgmt_table_resp> &cpl_out_resp,
+    hls::stream<uint32_t> &sq_head_stream_write,
+    hls::stream<uint32_t> &sq_head_stream_read
 ) {
     #pragma HLS INLINE off
+    
+    static uint32_t sq_head = 0;
+    static uint32_t pre_sq_head = 0;
     static cmd_info cmd_info_tbl[MAX_CMD_INFO_TBL_SIZE];
     #pragma HLS bind_storage variable=cmd_info_tbl type=RAM_2P impl=BRAM
 
-    // if (!submit_in_req.empty()) {
     if (!submit_in_req.empty() && !submit_out_resp.full()) {
         struct mgmt_table_req req = submit_in_req.read();
         struct mgmt_table_resp resp;
         cmd_info_tbl[req.cid % IO_QUEUE_MAX_DEPTH] = req.wdata;
         resp.rdata = cmd_info();
         resp.status = 0;
-        completed_request_bytes += (req.wdata.nlb + 1) * 4096;
         submit_out_resp.write(resp);
     }
 
-    // if (!cpl_in_req.empty() && !cpl_out_resp.full()) {
-    //     struct mgmt_table_req req = cpl_in_req.read();
-    //     struct mgmt_table_resp resp;
-    //     resp.rdata = cmd_info_tbl[req.cid % IO_QUEUE_MAX_DEPTH];
-    //     resp.status = 0;
-    //     cpl_out_resp.write(resp);
-    // }
+    if (!cpl_in_req.empty() && !cpl_out_resp.full()) {
+        struct mgmt_table_req req = cpl_in_req.read();
+        struct mgmt_table_resp resp;
+        resp.rdata = cmd_info_tbl[req.cid % IO_QUEUE_MAX_DEPTH];
+        resp.status = 0;
+        cpl_out_resp.write(resp);
+    }
+
+    // Read sq_head from CQE
+    if (!sq_head_stream_write.empty()) {
+        sq_head = sq_head_stream_write.read();
+    }
+
+    // Update sq_head for nvme_submit_cmd module
+    if (sq_head != pre_sq_head && !sq_head_stream_read.full()) {
+        sq_head_stream_read.write(pre_sq_head);
+        pre_sq_head = sq_head;
+    }
 }

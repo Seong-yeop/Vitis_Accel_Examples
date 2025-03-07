@@ -93,7 +93,7 @@ $(CSIM_EXEC): $(CSIM_SRCS)
 
 ############################## Setting Rules for Binary Containers (Building Kernels) ##############################
 # Compile kernel
-$(TEMP_DIR)/nvme_driver_top.xo: src/nvme_driver_top.cpp src/nvme_submit_cmd.cpp src/nvme_process_cpl.cpp 
+$(TEMP_DIR)/nvme_driver_top.xo: src/nvme_driver_top.cpp src/nvme_submit_cmd.cpp src/nvme_process_cpl.cpp src/nvme_io_mgmt_table.cpp
 	mkdir -p $(TEMP_DIR)
 	v++ -c $(VPP_FLAGS) -t $(TARGET) --platform $(PLATFORM) \
 		-k nvme_driver_top --temp_dir $(TEMP_DIR) -I'$(<D)' \

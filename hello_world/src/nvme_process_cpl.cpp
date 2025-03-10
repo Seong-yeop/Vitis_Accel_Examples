@@ -33,7 +33,9 @@ void nvme_process_cpl(
     static uint64_t _completed_requests_count = 0;
 
     static uint32_t current_delay_cycles = DELAY_CYCLES;
-    current_delay_cycles = delay_cycles;
+    
+    if (current_delay_cycles != delay_cycles)
+        current_delay_cycles = delay_cycles;
 
 
     switch (state) {
@@ -56,7 +58,7 @@ void nvme_process_cpl(
 
         case cq_state::DELAY:
             delay_counter++;
-            if (delay_counter == current_delay_cycles) {
+            if (delay_counter >= current_delay_cycles) {
                 delay_counter = 0;
                 state = cq_state::READ_ENTRY;
             }

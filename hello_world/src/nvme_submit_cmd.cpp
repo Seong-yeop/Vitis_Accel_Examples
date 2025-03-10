@@ -127,7 +127,7 @@ void nvme_mgmt_prp(
 void nvme_io_sqe_dbl_write(
     nvme_io_command_t *io_sq_base_address,
     uint32_t *dbl_base_address,
-    uint32_t &sq_tail,
+    // uint32_t &sq_tail,
     hls::stream<nvme_io_command_t> &nvme_io_command_stream,
     hls::stream<struct mgmt_table_req> &submit_in_req,
     hls::stream<struct mgmt_table_resp> &submit_out_resp,
@@ -148,6 +148,7 @@ void nvme_io_sqe_dbl_write(
     static struct cmd_info wdata;
     static struct mgmt_table_resp resp;
     static uint32_t sq_head = 0;
+    static uint32_t sq_tail = 0;
 
     switch (state)
     {
@@ -218,7 +219,7 @@ void nvme_io_submit(
     nvme_cqe_t *io_cq_base_address,
     uint32_t *dbl_base_address,
     uint64_t *buffer_base_address,
-    uint32_t &sq_tail,
+    // uint32_t &sq_tail,
     uint64_t prp2_physical_address,
     uint64_t* prp2_virtual_address,
     hls::stream<struct request_packet> &request_packet_stream,
@@ -250,7 +251,7 @@ void nvme_io_submit(
     nvme_io_sqe_dbl_write(
         io_sq_base_address,
         dbl_base_address,
-        sq_tail,
+        // sq_tail,
         nvme_io_command_stream,
         submit_in_req,
         submit_out_resp,

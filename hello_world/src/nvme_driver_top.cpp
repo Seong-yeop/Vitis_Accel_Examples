@@ -76,7 +76,7 @@ extern "C" {
             io_cq_base_addr,
             dbl_base_address,
             buffer_base_address,
-            sq_tail,
+            // sq_tail,
             prp2_physical_address,
             prp2_virtual_address,
             request_packet_stream,

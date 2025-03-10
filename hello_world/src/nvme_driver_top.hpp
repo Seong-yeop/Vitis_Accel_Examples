@@ -178,7 +178,7 @@ void nvme_io_submit(
     nvme_cqe_t *io_cq_base_address,
     uint32_t *dbl_base_address,
     uint64_t *buffer_base_address,
-    uint32_t &sq_tail,
+    // uint32_t &sq_tail,
     uint64_t prp2_physical_address,
     uint64_t* prp2_virtual_address,
     hls::stream<struct request_packet> &request_packet_stream,

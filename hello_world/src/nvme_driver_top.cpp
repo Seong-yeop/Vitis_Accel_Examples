@@ -18,10 +18,12 @@ extern "C" {
 
         hls::stream<struct request_packet> &request_packet_stream,
         /* NVMe Controller Completion Interface */
-        uint32_t &completed_request_number,
-        uint32_t &completed_request_bytes,
+        uint64_t &completed_request_number,
+        uint64_t &completed_request_bytes,
         uint64_t prp2_physical_address,
-        uint64_t* prp2_virtual_address
+        uint64_t* prp2_virtual_address,
+
+        uint32_t delay_cycles
     )
     {
         #pragma HLS DATAFLOW disable_start_propagation
@@ -102,7 +104,8 @@ extern "C" {
             cpl_in_req,
             cpl_out_resp,
             nvme_cq_polling_stream,
-            sq_head_stream_write
+            sq_head_stream_write,
+            delay_cycles
         );
     }
 }

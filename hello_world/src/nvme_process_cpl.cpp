@@ -6,21 +6,20 @@
 void nvme_process_cpl(
     nvme_cqe_t *io_cq_base_addr,
     uint32_t *dbl_base_address,
-    uint32_t &completed_requests_count,  
-    uint32_t &completed_requests_bytes,
+    uint64_t &completed_requests_count,  
+    uint64_t &completed_requests_bytes,
     hls::stream<struct mgmt_table_req> &cpl_in_req,
     hls::stream<struct mgmt_table_resp> &cpl_out_resp,
     hls::stream<uint32_t> &nvme_cq_polling_stream,
-    hls::stream<uint32_t> &sq_head_stream_write
+    hls::stream<uint32_t> &sq_head_stream_write,
+    uint32_t delay_cycles
 ) 
 {
-
     #pragma HLS INTERFACE mode=m_axi port=dbl_base_address depth=512
 
     // #pragma HLS PIPELINE II=1
     enum class cq_state {IDLE, READ_ENTRY, DELAY, UPDATE_SQ_HEAD, UPDATE_CQ_HEAD, COMPLETION, WAIT_RESP, SEND_REQ};
 
-    // static uint32_t cq_tail, // CQ Tail 
     static uint32_t cq_head = 0; // CQ Head
     static uint8_t cq_phase = 0; // CQ Phase   
     static cq_state state = cq_state::IDLE; 
@@ -29,6 +28,13 @@ void nvme_process_cpl(
     static nvme_cqe_t cqe;
     static struct mgmt_table_req req;
     static struct mgmt_table_resp resp;
+
+    static uint64_t _completed_requests_bytes = 0;
+    static uint64_t _completed_requests_count = 0;
+
+    static uint32_t current_delay_cycles = DELAY_CYCLES;
+    current_delay_cycles = delay_cycles;
+
 
     switch (state) {
         case cq_state::IDLE:
@@ -50,7 +56,7 @@ void nvme_process_cpl(
 
         case cq_state::DELAY:
             delay_counter++;
-            if (delay_counter == DELAY_CYCLES) {
+            if (delay_counter == current_delay_cycles) {
                 delay_counter = 0;
                 state = cq_state::READ_ENTRY;
             }
@@ -67,7 +73,8 @@ void nvme_process_cpl(
     
         case cq_state::COMPLETION:
             dbl_base_address[3] = cq_head;
-            completed_requests_count++;
+            _completed_requests_count++;
+            completed_requests_count = _completed_requests_count;
             state = cq_state::UPDATE_SQ_HEAD;
             break;
         
@@ -90,7 +97,8 @@ void nvme_process_cpl(
         case cq_state::WAIT_RESP:
             if (!cpl_out_resp.empty()) {
                 resp = cpl_out_resp.read();
-                completed_requests_bytes += (resp.rdata.nlb + 1) * 4096;
+                _completed_requests_bytes += (resp.rdata.nlb + 1) * 4096;
+                completed_requests_bytes = _completed_requests_bytes;
                 state = cq_state::IDLE;
             }
             break;

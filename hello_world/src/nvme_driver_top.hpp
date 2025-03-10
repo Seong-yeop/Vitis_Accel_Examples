@@ -192,12 +192,13 @@ void nvme_io_submit(
 void nvme_process_cpl(
     nvme_cqe_t *io_cq_base_addr,
     uint32_t *dbl_base_address,
-    uint32_t &completed_requests_count,  
-    uint32_t &completed_requests_bytes,
+    uint64_t &completed_requests_count,  
+    uint64_t &completed_requests_bytes,
     hls::stream<struct mgmt_table_req> &cpl_in_req,
     hls::stream<struct mgmt_table_resp> &cpl_out_resp,
     hls::stream<uint32_t> &nvme_cq_polling_stream,
-    hls::stream<uint32_t> &sq_head_stream_write
+    hls::stream<uint32_t> &sq_head_stream_write,
+    uint32_t delay_cycles
 ); 
 
 void mgmt_table(
@@ -223,10 +224,12 @@ extern "C" {
 
         hls::stream<struct request_packet> &request_packet_stream,
         /* NVMe Controller Completion Interface */
-        uint32_t &completed_request_number,
-        uint32_t &completed_request_bytes,
+        uint64_t &completed_request_number,
+        uint64_t &completed_request_bytes,
         uint64_t prp2_physical_address,
-        uint64_t* prp2_virtual_address
+        uint64_t* prp2_virtual_address,
+
+        uint32_t delay_cycles
     );
 }
 

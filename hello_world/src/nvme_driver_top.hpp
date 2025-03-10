@@ -1,9 +1,6 @@
 #ifndef NVME_PROCESS_CPL_H
 #define NVME_PROCESS_CPL_H
 
-#include <gmp.h> 
-#define __gmp_const const
-
 #include <hls_stream.h>
 #include <ap_int.h>
 #include <stdint.h>

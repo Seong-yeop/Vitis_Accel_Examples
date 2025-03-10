@@ -14,6 +14,9 @@ void nvme_process_cpl(
     hls::stream<uint32_t> &sq_head_stream_write
 ) 
 {
+
+    #pragma HLS INTERFACE mode=m_axi port=dbl_base_address depth=512
+
     // #pragma HLS PIPELINE II=1
     enum class cq_state {IDLE, READ_ENTRY, DELAY, UPDATE_SQ_HEAD, UPDATE_CQ_HEAD, COMPLETION, WAIT_RESP, SEND_REQ};
 

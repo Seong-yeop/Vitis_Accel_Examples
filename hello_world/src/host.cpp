@@ -17,12 +17,20 @@
 #include "cmdlineparser.h"
 // #include "xcl2.hpp"
 
+#define FADU
+
+
 #define IOCTL_GET_PHYS_ADDR _IOR('h', 1, unsigned long)
 
 
 #define HUGEPAGE_SIZE (2 * 1024 * 1024)
 #define HUGEPAGE_FILE "/sys/kernel/hugepage_info/hugepage_phys"
+
+#ifdef INTEL
+#define NVME_RESOURCE_FILE "/sys/bus/pci/devices/0000:18:00.0/resource"
+#elif defined(FADU)
 #define NVME_RESOURCE_FILE "/sys/bus/pci/devices/0000:af:00.0/resource"
+#endif
 
 #define SSD_ADMIN_SQ_PHYS_BASE(ssd_id) ((queue_phys_base) + 0x2000 * (ssd_id))
 #define SSD_ADMIN_CQ_PHYS_BASE(ssd_id) ((queue_phys_base) + 0x2000 * (ssd_id) + 0x1000)
@@ -33,24 +41,32 @@
 // admin 큐는 0x2000 바이트를 차지하고, 각 큐는 0x1000 바이트를 차지한다. 
 #define SSD_IO_QUEUE_OFFSET 0x2000
 #define SSD_IO_SQ_PHYS_BASE(ssd_id, qid) \
-    ((queue_phys_base) + SSD_IO_QUEUE_OFFSET + (((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x0 << ram_type_bit))
+    ((queue_phys_base) + SSD_IO_QUEUE_OFFSET) //(((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x0 << ram_type_bit))
 #define SSD_IO_CQ_PHYS_BASE(ssd_id, qid) \
-    ((queue_phys_base) + SSD_IO_QUEUE_OFFSET + (((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x1 << ram_type_bit))
+    ((queue_phys_base) + SSD_IO_QUEUE_OFFSET + 0x4000) //+ (((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x1 << ram_type_bit))
 #define SSD_IO_SQ_VIRT_BASE(ssd_id, qid) \
-    ((queue_virt_base) + SSD_IO_QUEUE_OFFSET + (((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x0 << ram_type_bit))
+    ((queue_virt_base) + SSD_IO_QUEUE_OFFSET) // + (((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x0 << ram_type_bit))
 #define SSD_IO_CQ_VIRT_BASE(ssd_id, qid) \
-    ((queue_virt_base) + SSD_IO_QUEUE_OFFSET + (((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x1 << ram_type_bit))
+    ((queue_virt_base) + SSD_IO_QUEUE_OFFSET + 0x4000) //+ (((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x1 << ram_type_bit))
 
 #define FPGA_HOST_MEM_BASE 0x2000000000 //  ~0x2000008000
-#define FPGA_SSD_BAR_BASE (FPGA_HOST_MEM_BASE) 
-#define FPGA_SQ_DOORBELL_BASE (FPGA_SSD_BAR_BASE + 0x1000)
+// #define FPGA_SSD_BAR_BASE (FPGA_HOST_MEM_BASE) 
+// #define FPGA_SQ_DOORBELL_BASE (FPGA_SSD_BAR_BASE + 0x1000)
 
 #define FPGA_HUGEPG_BASE (FPGA_HOST_MEM_BASE + 32768) // 0x2000008000 ~0x2000010000
 #define FPGA_IO_SQ_BASE (FPGA_HUGEPG_BASE + 0x2000)
-#define FPGA_IO_CQ_BASE (FPGA_HUGEPG_BASE + 0x3000)
+#define FPGA_IO_CQ_BASE (FPGA_HUGEPG_BASE + 0x6000)
 #define FPGA_EMPTY_MEM (FPGA_HUGEPG_BASE + 0x5000)
 
 #define FPGA_INTEL_BAR_BASE (FPGA_HOST_MEM_BASE + 32768 + 32768) // 0x2000008000 ~0x2000010000
+
+#ifdef INTEL
+#define FPGA_SSD_BAR_BASE (FPGA_INTEL_BAR_BASE) 
+#define FPGA_SQ_DOORBELL_BASE (FPGA_SSD_BAR_BASE + 0x1000)
+#elif defined(FADU)
+#define FPGA_SSD_BAR_BASE (FPGA_HOST_MEM_BASE) 
+#define FPGA_SQ_DOORBELL_BASE (FPGA_SSD_BAR_BASE + 0x1000)
+#endif
 
 #define FPGA_HUGEPG_BASE2 (FPGA_HOST_MEM_BASE + 32768 + 32768 + 32768) // 0x2000008000 ~0x2000010000, 0x8570010000
 #define FPGA_PRP_BASE FPGA_HUGEPG_BASE2
@@ -822,8 +838,8 @@ int main(int argc, char **argv)
     uint8_t *prp2_virt = (uint8_t *)(huge_base + 0x10000);
     memset(prp2_virt, 0, 0x10000);
 
-    uint64_t io_buf_phys = queue_phys_base + 0x5000;
-    uint8_t *io_buf_virt = (uint8_t *)(huge_base + 0x5000);
+    uint64_t io_buf_phys = queue_phys_base + 0x20000;
+    uint8_t *io_buf_virt = (uint8_t *)(huge_base + 0x20000);
     memset(io_buf_virt, 0x33, 7 * 4096);  // 4096바이트(1블록) 예시
     
     uint32_t tail = io_sq_tail[0][1];
@@ -837,47 +853,77 @@ int main(int argc, char **argv)
     ip.write_register(0x40, (FPGA_SQ_DOORBELL_BASE) & 0xFFFFFFFF);    
     ip.write_register(0x44, (FPGA_SQ_DOORBELL_BASE >> 32) & 0xFFFFFFFF);
 
-    // ip.write_register(0x4C, (FPGA_SQ_DOORBELL_BASE) & 0xFFFFFFFF);    
-    // ip.write_register(0x50, (FPGA_SQ_DOORBELL_BASE >> 32) & 0xFFFFFFFF);
+    ip.write_register(0x4C, (FPGA_SQ_DOORBELL_BASE) & 0xFFFFFFFF);    
+    ip.write_register(0x50, (FPGA_SQ_DOORBELL_BASE >> 32) & 0xFFFFFFFF);
 
-    ip.write_register(0x7c, (prp2_phys) & 0xFFFFFFFF);    
-    ip.write_register(0x80, (prp2_phys >> 32) & 0xFFFFFFFF);
+    ip.write_register(0x94, (prp2_phys) & 0xFFFFFFFF);    
+    ip.write_register(0x98, (prp2_phys >> 32) & 0xFFFFFFFF);
 
-    ip.write_register(0x88, (FPGA_PRP_BASE) & 0xFFFFFFFF);    //prp2_vaddr1
-    ip.write_register(0x8c, (FPGA_PRP_BASE >> 32) & 0xFFFFFFFF); //prp2_vaddr2
+    ip.write_register(0xa0, (FPGA_PRP_BASE) & 0xFFFFFFFF);    //prp2_vaddr1
+    ip.write_register(0xa4, (FPGA_PRP_BASE >> 32) & 0xFFFFFFFF); //prp2_vaddr2
+
+    ip.write_register(0xac, 10000);
 
 
-    sleep(3);
 
     volatile uint32_t *cq_hdbell =
     (uint32_t *)(ssd_virt_base[0] + 0x1000 + (2 * 1 + 1) * 4);
 
-    auto packet_generator_run = packet_generator_krnl(0x1, 300, 3, io_buf_phys, 1);
-    packet_generator_run.wait();
+    // packet_generator_run = packet_generator_krnl(0x1, 400, 1, io_buf_phys, 45);
+    // packet_generator_run.wait();
+    // packet_generator_run = packet_generator_krnl(0x1, 500, 1, io_buf_phys, 45);
+    // packet_generator_run.wait();
 
-    sleep(1);
     // *cq_hdbell = 1;
 
-    memset(io_buf_virt, 0x31, 5 * 4096);  // 
+    // memset(io_buf_virt, 0x31, 5 * 4096);  // 
 
+    // packet_generator_run = packet_generator_krnl(0x1, 156, 5, io_buf_phys, 1);
+    // packet_generator_run.wait();
     // packet_generator_run = packet_generator_krnl(0x1, 150, 5, io_buf_phys, 1);
+    // packet_generator_run.wait();
+    // packet_generator_run = packet_generator_krnl(0x1, 150, 8, io_buf_phys, 1);
     // packet_generator_run.wait();
     // packet_generator_run = packet_generator_krnl(0x1, 150, 5, io_buf_phys, 1);
     // packet_generator_run.wait();
     // packet_generator_run = packet_generator_krnl(0x1, 150, 5, io_buf_phys, 1);
     // packet_generator_run.wait();
      
-    sleep(1);
     // *cq_hdbell = 2;
 
+    uint64_t completed_request_number = 0;
+    uint64_t prev_completed_request_number = 0;
+    
+    const uint64_t target_request_number = 150000;
+    
+    const uint64_t batch_size = 128;
+    auto packet_generator_run = packet_generator_krnl(0x1, 300, 1, io_buf_phys, batch_size);
+    
+    // 동작 루프
+    while (completed_request_number < target_request_number) {
+        completed_request_number = (ip.read_register(0x64) << 32) | ip.read_register(0x68);
+    
+        if (completed_request_number - prev_completed_request_number >= batch_size) {
+            auto packet_generator_run = packet_generator_krnl(0x1, 300, 1, io_buf_phys, batch_size);
+            // packet_generator_run.wait();
+            prev_completed_request_number += batch_size;
+    
+        }
+        printf("Completed request number: %llu\n", completed_request_number);
+    
+        // sleep(1); // polling 간격 조정 가능
+    }
+    
 
     printf("mem addr : %p", prp2_phys);
     print_mem((uint64_t*)prp2_virt, 10);
     print_io_sq(0, 2);
     print_io_cq(0, 2);
 
-    uint32_t completed_request_bytes = ip.read_register(0x74);
+    uint64_t completed_request_bytes = (ip.read_register(0x7C) << 32) | ip.read_register(0x80);
+    completed_request_number =(ip.read_register(0x64) << 32) | ip.read_register(0x68);
     printf("Completed request bytes: %u\n", completed_request_bytes);
+    printf("Completed request number: %u\n", completed_request_number);
 
     munmap((void*)ssd_virt_base[0], MAP_SIZE);
     munmap(huge_base, HUGEPAGE_SIZE);

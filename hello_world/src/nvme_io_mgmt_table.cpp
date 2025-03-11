@@ -136,7 +136,7 @@ void mgmt_table(
 
     // Update sq_head for nvme_submit_cmd module
     if (sq_head != pre_sq_head && !sq_head_stream_read.full()) {
-        sq_head_stream_read.write(pre_sq_head);
+        sq_head_stream_read.write(sq_head);
         pre_sq_head = sq_head;
     }
 }

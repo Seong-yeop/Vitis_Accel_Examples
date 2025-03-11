@@ -138,7 +138,7 @@ void nvme_io_sqe_dbl_write(
 #pragma HLS INLINE off
 #pragma HLS INTERFACE ap_ctrl_none port=return
 
-    enum fsm_state {IDLE, CHECK_QUEUE_FULL, SEND_REQ, WAIT_RESP, WRITE_MEM, SEND_CQ_POLL};
+    enum fsm_state {IDLE, CHECK_QUEUE_FULL, READ_SQ_HEAD, SEND_REQ, WAIT_RESP, WRITE_MEM, SEND_CQ_POLL};
 
     static fsm_state state = IDLE;
 #pragma HLS RESET variable=state
@@ -173,13 +173,17 @@ void nvme_io_sqe_dbl_write(
             break;
 
         case CHECK_QUEUE_FULL:
-            while (!sq_head_stream_read.empty()) {
-               sq_head = sq_head_stream_read.read(); 
-            }
             if ((sq_tail + 1) % IO_QUEUE_MAX_DEPTH == sq_head) {
-                state = CHECK_QUEUE_FULL;
+                state = READ_SQ_HEAD;
             } else {
                 state = SEND_REQ;
+            }
+            break;
+
+        case READ_SQ_HEAD:
+            if (!sq_head_stream_read.empty()) {
+                sq_head = sq_head_stream_read.read();
+                state = CHECK_QUEUE_FULL;
             }
             break;
 

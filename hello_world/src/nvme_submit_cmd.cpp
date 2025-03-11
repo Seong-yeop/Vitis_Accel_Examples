@@ -168,7 +168,7 @@ void nvme_io_sqe_dbl_write(
                 req.cid = cmd.cid;
                 req.wdata = wdata;
 
-                state = SEND_REQ;
+                state = CHECK_QUEUE_FULL;
             }
             break;
 
@@ -183,8 +183,8 @@ void nvme_io_sqe_dbl_write(
         case READ_SQ_HEAD:
             if (!sq_head_stream_read.empty()) {
                 sq_head = sq_head_stream_read.read();
-                state = CHECK_QUEUE_FULL;
             }
+            state = CHECK_QUEUE_FULL;
             break;
 
         case SEND_REQ:

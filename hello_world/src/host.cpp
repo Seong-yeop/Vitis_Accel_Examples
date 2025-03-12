@@ -17,6 +17,12 @@
 #include "cmdlineparser.h"
 // #include "xcl2.hpp"
 
+
+
+#define KB(x) ((x) * 1024)
+#define MB(x) ((x) * 1024 * 1024)
+#define GB(x) ((x) * 1024 * 1024 * 1024)
+
 #define FADU
 
 
@@ -893,37 +899,61 @@ int main(int argc, char **argv)
 
     uint64_t completed_request_number = 0;
     uint64_t prev_completed_request_number = 0;
+
+
     
-    const uint64_t target_request_number = 150000;
+    uint64_t size = GB(1); 
     
-    const uint64_t batch_size = 128;
-    auto packet_generator_run = packet_generator_krnl(0x1, 300, 1, io_buf_phys, batch_size);
+    auto start = std::chrono::high_resolution_clock::now();
+
+    const uint32_t batch_size = 128;
     
-    // 동작 루프
+    uint64_t slba = 0;
+    uint32_t nlb = 1;
+
+    const uint32_t target_request_number = size/(nlb * 4096);
+
+    auto packet_generator_run = packet_generator_krnl(0x1, slba, nlb, io_buf_phys, batch_size);
+    packet_generator_run.wait();
+    slba += batch_size * nlb;
+
     while (completed_request_number < target_request_number) {
         completed_request_number = (ip.read_register(0x64) << 32) | ip.read_register(0x68);
-    
-        if (completed_request_number - prev_completed_request_number >= batch_size) {
-            auto packet_generator_run = packet_generator_krnl(0x1, 300, 1, io_buf_phys, batch_size);
-            // packet_generator_run.wait();
-            prev_completed_request_number += batch_size;
-    
+        if (completed_request_number - prev_completed_request_number >= 1) {
+            uint32_t insert_packets =  completed_request_number - prev_completed_request_number;
+            auto packet_generator_run = packet_generator_krnl(0x1, slba, nlb, io_buf_phys, insert_packets);
+            packet_generator_run.wait();
+            slba += insert_packets * nlb;
+            prev_completed_request_number += insert_packets;
         }
-        printf("Completed request number: %llu\n", completed_request_number);
-    
-        // sleep(1); // polling 간격 조정 가능
+        // printf("completed_request_number: %u\n", completed_request_number);
     }
-    
 
-    printf("mem addr : %p", prp2_phys);
-    print_mem((uint64_t*)prp2_virt, 10);
-    print_io_sq(0, 2);
-    print_io_cq(0, 2);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto elapsed_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
 
     uint64_t completed_request_bytes = (ip.read_register(0x7C) << 32) | ip.read_register(0x80);
     completed_request_number =(ip.read_register(0x64) << 32) | ip.read_register(0x68);
+
+    double duration_us = elapsed_time;
+    uint64_t bytes = completed_request_bytes;
+    double duration_s = duration_us * 1e-6;
+    double data_in_gib = bytes / (1024.0*1024.0*1024.0);
+    double gib_per_sec = data_in_gib / duration_s;
+    double iops = completed_request_number / duration_s;
+
+    std::cout << "Duration: " << duration_us << " us" << std::endl;
+    std::cout << "Duration (s): " << duration_s << " s" << std::endl;
+    std::cout << "IOPS: " << iops << std::endl;
+    std::cout << "GiB/s: " << gib_per_sec << std::endl;
     printf("Completed request bytes: %u\n", completed_request_bytes);
     printf("Completed request number: %u\n", completed_request_number);
+
+    // printf("mem addr : %p", prp2_phys);
+    // print_mem((uint64_t*)prp2_virt, 10);
+    // print_io_sq(0, 2);
+    // print_io_cq(0, 2);
+
 
     munmap((void*)ssd_virt_base[0], MAP_SIZE);
     munmap(huge_base, HUGEPAGE_SIZE);

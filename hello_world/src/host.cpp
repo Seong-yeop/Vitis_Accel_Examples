@@ -18,13 +18,11 @@
 // #include "xcl2.hpp"
 
 
-
 #define KB(x) ((x) * 1024)
 #define MB(x) ((x) * 1024 * 1024)
 #define GB(x) ((x) * 1024 * 1024 * 1024)
 
 #define FADU
-
 
 #define IOCTL_GET_PHYS_ADDR _IOR('h', 1, unsigned long)
 
@@ -622,6 +620,7 @@ int main(int argc, char **argv)
 
     parser.addSwitch("--xclbin_file", "-x", "input binary file string", "");
     parser.addSwitch("--device_id", "-d", "device index", "0");
+    parser.addSwitch("--nlb", "-n", "number of loopback", "1");
     parser.parse(argc, argv);
 
     std::string binaryFile = parser.value("xclbin_file");
@@ -909,7 +908,8 @@ int main(int argc, char **argv)
     const uint32_t batch_size = 128;
     
     uint64_t slba = 0;
-    uint32_t nlb = 1;
+
+    uint32_t nlb = stoi(parser.value("nlb"));
 
     const uint32_t target_request_number = size/(nlb * 4096);
 
@@ -942,6 +942,7 @@ int main(int argc, char **argv)
     double gib_per_sec = data_in_gib / duration_s;
     double iops = completed_request_number / duration_s;
 
+    std::cout << "Block Size: " << (nlb * 4096) / 1024 << std::endl;
     std::cout << "Duration: " << duration_us << " us" << std::endl;
     std::cout << "Duration (s): " << duration_s << " s" << std::endl;
     std::cout << "IOPS: " << iops << std::endl;

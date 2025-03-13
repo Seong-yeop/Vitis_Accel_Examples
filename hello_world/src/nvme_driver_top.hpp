@@ -153,15 +153,6 @@ struct mgmt_table_resp {
     ap_uint<1> status;
 };
 
-void mgmt_table(
-    hls::stream<mgmt_table_req>  &submit_in_req
-    // hls::stream<mgmt_table_resp> &submit_out_resp
-    // hls::stream<mgmt_table_req>  &cpl_in_req,
-    // hls::stream<mgmt_table_resp> &cpl_out_resp
-);
-
-
-
 extern "C" {
 void packet_generator(
     uint32_t opcode,

@@ -1,3 +1,5 @@
+// 	Region 4: Memory at 39ffe0000000 (64-bit, prefetchable) [size=256M]
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -7,7 +9,7 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/ioctl.h>
-
+#include <iostream>
 
 #include <xrt/xrt_device.h>
 #include <xrt/xrt_kernel.h>
@@ -17,12 +19,16 @@
 #include "cmdlineparser.h"
 // #include "xcl2.hpp"
 
+#define INTEL
 #define IOCTL_GET_PHYS_ADDR _IOR('h', 1, unsigned long)
-
-
 #define HUGEPAGE_SIZE (2 * 1024 * 1024)
 #define HUGEPAGE_FILE "/sys/kernel/hugepage_info/hugepage_phys"
+
+#ifdef INTEL
+#define NVME_RESOURCE_FILE "/sys/bus/pci/devices/0000:18:00.0/resource"
+#elif defined(FADU)
 #define NVME_RESOURCE_FILE "/sys/bus/pci/devices/0000:af:00.0/resource"
+#endif
 
 #define SSD_ADMIN_SQ_PHYS_BASE(ssd_id) ((queue_phys_base) + 0x2000 * (ssd_id))
 #define SSD_ADMIN_CQ_PHYS_BASE(ssd_id) ((queue_phys_base) + 0x2000 * (ssd_id) + 0x1000)
@@ -33,24 +39,36 @@
 // admin 큐는 0x2000 바이트를 차지하고, 각 큐는 0x1000 바이트를 차지한다. 
 #define SSD_IO_QUEUE_OFFSET 0x2000
 #define SSD_IO_SQ_PHYS_BASE(ssd_id, qid) \
-    ((queue_phys_base) + SSD_IO_QUEUE_OFFSET + (((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x0 << ram_type_bit))
+    hbm_sq_phys_base
+    // ((queue_phys_base) + SSD_IO_QUEUE_OFFSET) //(((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x0 << ram_type_bit))
 #define SSD_IO_CQ_PHYS_BASE(ssd_id, qid) \
-    ((queue_phys_base) + SSD_IO_QUEUE_OFFSET + (((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x1 << ram_type_bit))
+    ((queue_phys_base) + SSD_IO_QUEUE_OFFSET + 0x4000) //+ (((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x1 << ram_type_bit))
 #define SSD_IO_SQ_VIRT_BASE(ssd_id, qid) \
-    ((queue_virt_base) + SSD_IO_QUEUE_OFFSET + (((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x0 << ram_type_bit))
+    hbm_sq_virt_base
+    // ((queue_virt_base) + SSD_IO_QUEUE_OFFSET) // + (((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x0 << ram_type_bit))
 #define SSD_IO_CQ_VIRT_BASE(ssd_id, qid) \
-    ((queue_virt_base) + SSD_IO_QUEUE_OFFSET + (((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x1 << ram_type_bit))
+    ((queue_virt_base) + SSD_IO_QUEUE_OFFSET + 0x4000) //+ (((qid) - 1) << queue_low_bit) + ((ssd_id) << ssd_low_bit) + (0x1 << ram_type_bit))
+
+#define FPGA_HBM_BASE 0x0
 
 #define FPGA_HOST_MEM_BASE 0x2000000000 //  ~0x2000008000
-#define FPGA_SSD_BAR_BASE (FPGA_HOST_MEM_BASE) 
-#define FPGA_SQ_DOORBELL_BASE (FPGA_SSD_BAR_BASE + 0x1000)
+// #define FPGA_SSD_BAR_BASE (FPGA_HOST_MEM_BASE) 
+// #define FPGA_SQ_DOORBELL_BASE (FPGA_SSD_BAR_BASE + 0x1000)
 
 #define FPGA_HUGEPG_BASE (FPGA_HOST_MEM_BASE + 32768) // 0x2000008000 ~0x2000010000
 #define FPGA_IO_SQ_BASE (FPGA_HUGEPG_BASE + 0x2000)
-#define FPGA_IO_CQ_BASE (FPGA_HUGEPG_BASE + 0x3000)
+#define FPGA_IO_CQ_BASE (FPGA_HUGEPG_BASE + 0x6000)
 #define FPGA_EMPTY_MEM (FPGA_HUGEPG_BASE + 0x5000)
 
 #define FPGA_INTEL_BAR_BASE (FPGA_HOST_MEM_BASE + 32768 + 32768) // 0x2000008000 ~0x2000010000
+
+#ifdef INTEL
+#define FPGA_SSD_BAR_BASE (FPGA_INTEL_BAR_BASE) 
+#define FPGA_SQ_DOORBELL_BASE (FPGA_SSD_BAR_BASE + 0x1000)
+#elif defined(FADU)
+#define FPGA_SSD_BAR_BASE (FPGA_HOST_MEM_BASE) 
+#define FPGA_SQ_DOORBELL_BASE (FPGA_SSD_BAR_BASE + 0x1000)
+#endif
 
 #define FPGA_HUGEPG_BASE2 (FPGA_HOST_MEM_BASE + 32768 + 32768 + 32768) // 0x2000008000 ~0x2000010000, 0x8570010000
 #define FPGA_PRP_BASE FPGA_HUGEPG_BASE2
@@ -61,7 +79,9 @@
 #define MAP_MASK (MAP_SIZE - 1)
 
 #define ADMIN_QUEUE_DEPTH 0x1F
-#define IO_QUEUE_DEPTH 32
+#define IO_QUEUE_DEPTH 128
+
+#define HBM_MMAP_SIZE (512 * 1024 * 1024) // 512M
 
 volatile uint32_t admin_sq_tl[32];
 volatile uint32_t admin_cq_hd[32];
@@ -79,10 +99,328 @@ uint16_t io_command_id[32][256];
 
 uint64_t queue_phys_base;
 uint64_t queue_virt_base;
+uint64_t hbm_phys_base = 0x39f000000000; // FPGA BAR ADDRESS
+uint64_t hbm_virt_base; 
+
+#define HBM_SQ_FPGA_BASE 0x0
+uint64_t hbm_sq_phys_base = hbm_phys_base + 2 * 128 * 1024 * 1024; // HBM[0]
+uint64_t hbm_sq_virt_base;
+
+#define HBM_PRP1_FPGA_BASE 0x20000000
+uint64_t hbm_prp1_phys_base = hbm_phys_base + 6 * 128 * 1024 * 1024; // HBM[1]
+uint64_t hbm_prp1_virt_base; // HBM[1]
+
+#define HBM_PRP2_FPGA_BASE 0x40000000
+uint64_t hbm_prp2_phys_base = hbm_phys_base + 10 * 128 * 1024 * 1024; // HBM[2]
+uint64_t hbm_prp2_virt_base; // HBM[2]
 
 uint64_t queue_low_bit = 12;
 uint64_t ssd_low_bit = 12;
 uint64_t ram_type_bit = 12;
+uint64_t nvme_pcie_bar_base;
+
+void print_mem(uint64_t *mem, int length);
+void print_bar(int offset, int length);
+void print_sq(int offset, int length);
+void print_cq(int offset, int length) ;
+void print_io_sq(int offset, int length) ;
+void print_io_cq(int offset, int length);
+int wait_for_next_cqe(int ssd_id);
+int wait_for_next_io_cqe(int ssd_id, int qid);
+void insert_io_sq(int ssd_id, int qid, const uint32_t command[16]);
+int nvme_io_read(int ssd_id, int qid, uint64_t slba, uint16_t nblocks, uint64_t prp1, uint32_t nsid);
+int nvme_io_write(int ssd_id, int qid, uint64_t slba, uint16_t nblocks, uint64_t prp1, uint32_t nsid);
+void insert_admin_sq(int ssd_id, uint32_t command[]);
+int nvme_set_num_of_qp(int ssd_id, uint16_t queue_count);
+int nvme_create_cq(int ssd_id, uint16_t cq_id, uint16_t cq_depth, uint64_t cq_addr);
+int nvme_create_sq(int ssd_id, uint16_t sq_id, uint16_t cq_id, uint16_t sq_depth, uint64_t sq_addr);
+int get_smart_info(int ssd_id, uint64_t queue_phys_base);
+int get_temperature_info(int ssd_id, uint64_t queue_phys_base);
+int nvme_identify_controller(int ssd_id, uint64_t queue_phys_base);
+
+int main(int argc, char **argv)
+{
+
+    memset(io_sq_tail, 0, sizeof(io_sq_tail));
+    memset(io_cq_head, 0, sizeof(io_cq_head));
+    memset(io_phase_bit, 0, sizeof(io_phase_bit));
+    memset(io_command_id, 0, sizeof(io_command_id));
+
+    FILE *fp;
+    int fd;
+    void *map_base, *hugepg_base, *virt_addr;
+    off_t target_offset = NVME_ADMIN_SUBMISSION_QUEUE_BASE_ADDR_OFFSET;
+
+
+    sda::utils::CmdLineParser parser;
+
+    parser.addSwitch("--xclbin_file", "-x", "input binary file string", "");
+    parser.addSwitch("--device_id", "-d", "device index", "0");
+    parser.parse(argc, argv);
+
+    std::string binaryFile = parser.value("xclbin_file");
+    int device_index = stoi(parser.value("device_id"));
+
+    if (argc < 3) {
+        parser.printHelp();
+        exit(EXIT_FAILURE);
+    }
+
+    std::cout << "Open the device" << device_index << std::endl;
+    auto device = xrt::device(device_index);
+    std::cout << "Load the xclbin " << binaryFile << std::endl;
+    auto uuid = device.load_xclbin(binaryFile);
+    
+    fp = fopen(NVME_RESOURCE_FILE, "rb");
+    if (fp == NULL) {
+        perror("fopen nvme resource file");
+        exit(EXIT_FAILURE);
+    }
+
+    fscanf(fp, "0x%lx", &nvme_pcie_bar_base);
+    fclose(fp);
+
+    printf("BAR 0 of nvme device (physical address) is 0x%lx\n", nvme_pcie_bar_base);
+
+    fd = open("/dev/hugepage_dev", O_RDWR);
+    if (fd < 0) {
+        perror("open hugepage");
+        return 1;
+    }
+
+    uint64_t queue_phys_base;
+    if (ioctl(fd, IOCTL_GET_PHYS_ADDR, &queue_phys_base) < 0) {
+        perror("ioctl");
+        close(fd);
+        return 1;
+    }
+    void *huge_base = mmap(NULL, HUGEPAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    memset(huge_base, 0, HUGEPAGE_SIZE);
+    mlock(huge_base, HUGEPAGE_SIZE);
+
+    queue_virt_base = (uint64_t)huge_base;
+    int mfd = open("/dev/mem", O_RDWR | O_SYNC);
+
+    ssd_virt_base[0] = (uint64_t) mmap(0, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mfd, nvme_pcie_bar_base);
+    memset((void *)ssd_virt_base[0], 0, MAP_SIZE);
+
+    hbm_virt_base =  (uint64_t) mmap(0, HBM_MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mfd, hbm_phys_base); // 
+    mlock((void*)hbm_virt_base, HBM_MMAP_SIZE);
+
+    hbm_sq_virt_base =  (uint64_t) mmap(0, HBM_MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mfd, hbm_sq_phys_base); // 
+    mlock((void*)hbm_sq_virt_base, HBM_MMAP_SIZE);
+
+    hbm_prp1_virt_base = (uint64_t) mmap(0, HBM_MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mfd, hbm_prp1_phys_base); // 
+    mlock((void*)hbm_prp1_virt_base, HBM_MMAP_SIZE);
+
+    hbm_prp2_virt_base = (uint64_t) mmap(0, HBM_MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mfd, hbm_prp2_phys_base); // 
+    mlock((void*)hbm_prp2_virt_base, HBM_MMAP_SIZE);
+
+    print_mem((uint64_t*)hbm_virt_base, 10);
+
+    if (huge_base == MAP_FAILED) {
+        perror("mmap");
+        exit(EXIT_FAILURE);
+    }
+    
+    printf("Hugepage physical address: 0x%lx\n", queue_phys_base);
+
+    if (queue_phys_base == 0) {
+        fprintf(stderr, "Failed to get physical address\n");
+        munmap(huge_base, HUGEPAGE_SIZE);
+        return 1;
+    }
+
+    uint64_t nvme_ctrl_cap = *(volatile uint64_t *)(ssd_virt_base[0]);
+    uint64_t nvme_ctrl_mpsmin = (nvme_ctrl_cap >> 48) & 0xf;
+    if (nvme_ctrl_mpsmin > 0)
+    {
+        fprintf(stderr, "ERROR: The nvme device doesn't support 4KB page.\n");
+        exit(1);
+    }
+    uint64_t nvme_ctrl_dstrd = (nvme_ctrl_cap >> 32) & 0xf;
+    printf("Doorbell stride: %lu\n", nvme_ctrl_dstrd);
+
+    if (nvme_ctrl_dstrd > 0)
+    {
+        fprintf(stderr, "ERROR: The nvme device doesn't support 4B doorbell stride.\n");
+        exit(1);
+    }
+    uint64_t nvme_ctrl_mqes = nvme_ctrl_cap & 0xffff;
+    if (nvme_ctrl_mqes < 32)
+    {
+        fprintf(stderr, "ERROR: The nvme device doesn't support 32 queue entries.\n");
+        exit(1);
+    }
+    volatile uint32_t *nvme_cc_pt = (volatile uint32_t *)(ssd_virt_base[0] + 0x14);
+    *nvme_cc_pt = 0x460000;
+    
+    volatile uint32_t *nvme_csts_pt = (volatile uint32_t *)(ssd_virt_base[0]+ 0x1C);
+    while (*nvme_csts_pt != 0) {
+        sleep(1);
+    }
+
+    // Set admin queue size to 0x1F (32)
+    volatile uint32_t *nvme_aqa_pt = (uint32_t *)(ssd_virt_base[0] + 0x24);
+
+    // Set SQ,CQ depth to 0x1F
+    *nvme_aqa_pt = (ADMIN_QUEUE_DEPTH << 16) + ADMIN_QUEUE_DEPTH;
+
+    // Set admin SQ base address
+    uint64_t *nvme_asq_pt = (uint64_t *)(ssd_virt_base[0]+ 0x28);
+    *nvme_asq_pt = SSD_ADMIN_SQ_PHYS_BASE(0); // Memory address of admin SQ 
+
+    uint64_t *nvme_acq_pt = (uint64_t *)(ssd_virt_base[0] + 0x30);
+    *nvme_acq_pt = SSD_ADMIN_CQ_PHYS_BASE(0); // Memory address of admin CQ
+
+    *nvme_cc_pt = 0x460001;
+
+    while(*nvme_csts_pt == 0) {
+        sleep(1);
+        // printf("Waiting for controller to be ready. CSTS is %08x.\n", *nvme_csts_pt);
+    }
+    
+    admin_sq_tl[0] = 0;
+    admin_cq_hd[0] = 0;
+
+    printf("Admin SQ physical base address: %lx\n", SSD_ADMIN_SQ_PHYS_BASE(0));
+    printf("Admin CQ physical base address: %lx\n", SSD_ADMIN_CQ_PHYS_BASE(0));
+    
+    volatile uint32_t *nvme_cq_base = (volatile uint32_t*)SSD_ADMIN_CQ_VIRT_BASE(0);
+    for (int i = 0; i < 128; i++)
+        nvme_cq_base[i] = 0;
+
+    uint64_t identify_buf_phys = queue_phys_base + 0x20000;
+    uint8_t *identify_buf_virt = (uint8_t *)(queue_virt_base + 0x20000);
+
+    memset(identify_buf_virt, 0, 4096);
+
+    int status = nvme_identify_controller(0, identify_buf_phys);
+    if (status != 0) {
+        fprintf(stderr, "Identify Controller command failed, status=0x%x\n", status);
+    } else {
+        printf("PCI Vendor ID: 0x%04x\n", *(uint16_t *)(identify_buf_virt + 0x00));
+    }
+
+    int cmd_ret;
+    cmd_ret = nvme_set_num_of_qp(0, 1);
+    if (cmd_ret != 0) {
+        fprintf(stderr, "Failed to set the queue pair\n");
+        return 1;
+    }
+
+    uint64_t cq_addr = SSD_IO_CQ_PHYS_BASE(0, 1);
+    printf("NVMe IO CQ address: 0x%lx\n", cq_addr);
+    uint16_t qid = 1;
+    uint16_t queue_depth = IO_QUEUE_DEPTH;
+
+    cmd_ret = nvme_create_cq(0, qid, queue_depth, cq_addr);
+    if (cmd_ret != 0) {
+        fprintf(stderr, "Failed to create the queue pair\n");
+        return 1;
+    }
+
+    uint64_t sq_addr = hbm_sq_phys_base;
+    cmd_ret = nvme_create_sq(0, qid, qid, queue_depth, sq_addr);
+    if (cmd_ret != 0) {
+        fprintf(stderr, "Failed to create the queue pair\n");
+        return 1;
+    }
+
+    printf("NVMe IO sq_addr: 0x%lx\n", sq_addr);
+    printf("NVMe IO cq_addr: 0x%lx\n", cq_addr);
+    
+    uint64_t buffer_phys = (uint64_t)(queue_phys_base + 0x10000);
+
+    cmd_ret = get_smart_info(0, buffer_phys);
+    if (cmd_ret != 0) {
+        fprintf(stderr, "Failed to get smart info\n");
+        return 1;
+    }
+    
+    uint8_t *smart_info = (uint8_t *)(huge_base + 0x10000);
+    if (smart_info[0] != 0x0) {
+        printf("SSD reported critical warning 0x%02x\n", smart_info[0]);
+    }
+
+    uint16_t temperature_kelvin = *(uint16_t *)(smart_info + 1);
+    int temperature_celsius = temperature_kelvin - 273;
+
+    printf("SSD Temperature: %u K (%d°C)\n", temperature_kelvin, temperature_celsius);
+
+    auto ip = xrt::ip(device, uuid, "nvme_driver_top:{nvme_driver_top_1}");
+    auto packet_generator_krnl = xrt::kernel(device, uuid, "packet_generator");
+
+    uint64_t io_buf_phys = hbm_prp1_phys_base;
+    uint8_t *io_buf_virt = (uint8_t*)hbm_prp1_virt_base;
+    //Instead of Memset, I will write the data to the bo
+    //memset(io_buf_virt, 0x33, 128 * 4096);  // 4096바이트(1블록) 예시
+    
+    uint64_t prp2_phys = hbm_prp2_phys_base;
+    uint8_t *prp2_virt = (uint8_t*)hbm_prp2_virt_base;
+    memset(prp2_virt, 0, 0x10000);
+
+    uint32_t tail = io_sq_tail[0][1];
+
+    ip.write_register(0x34, (HBM_SQ_FPGA_BASE) & 0xFFFFFFFF);
+    ip.write_register(0x38, (HBM_SQ_FPGA_BASE> 32) & 0xFFFFFFFF);
+
+    ip.write_register(0x28, (FPGA_IO_CQ_BASE) & 0xFFFFFFFF);
+    ip.write_register(0x2c, (FPGA_IO_CQ_BASE >> 32) & 0xFFFFFFFF);
+
+    ip.write_register(0x40, (FPGA_SQ_DOORBELL_BASE) & 0xFFFFFFFF);    
+    ip.write_register(0x44, (FPGA_SQ_DOORBELL_BASE >> 32) & 0xFFFFFFFF);
+
+    ip.write_register(0x4C, (FPGA_SQ_DOORBELL_BASE) & 0xFFFFFFFF);    
+    ip.write_register(0x50, (FPGA_SQ_DOORBELL_BASE >> 32) & 0xFFFFFFFF);
+
+    ip.write_register(0x94, (hbm_prp2_phys_base) & 0xFFFFFFFF);    
+    ip.write_register(0x98, (hbm_prp2_phys_base >> 32) & 0xFFFFFFFF);
+
+    ip.write_register(0xa0, (HBM_PRP2_FPGA_BASE) & 0xFFFFFFFF);    //prp2_vaddr1
+    ip.write_register(0xa4, (HBM_PRP2_FPGA_BASE >> 32) & 0xFFFFFFFF); //prp2_vaddr2
+
+    ip.write_register(0xac, 10000);
+
+    volatile uint32_t *cq_hdbell =
+    (uint32_t *)(ssd_virt_base[0] + 0x1000 + (2 * 1 + 1) * 4);
+
+
+    uint64_t completed_request_number = 0;
+    uint64_t prev_completed_request_number = 0;
+    
+    const uint64_t target_request_number = 1;
+    
+    const uint64_t batch_size = 1;
+    auto packet_generator_run = packet_generator_krnl(0x1, 300, 100, io_buf_phys, batch_size);
+    packet_generator_run.wait();
+    sleep(1);
+    print_io_cq(0, 3);
+
+    uint64_t completed_request_bytes = (ip.read_register(0x7C) << 32) | ip.read_register(0x80);
+    completed_request_number =(ip.read_register(0x64) << 32) | ip.read_register(0x68);
+    printf("Completed request bytes: %u\n", completed_request_bytes);
+    printf("Completed request number: %u\n", completed_request_number);
+
+
+    munmap((void*)ssd_virt_base[0], MAP_SIZE);
+    munmap(huge_base, HUGEPAGE_SIZE);
+    munmap((void*)hbm_virt_base, HBM_MMAP_SIZE);
+    munmap((void*)hbm_sq_virt_base, HBM_MMAP_SIZE);
+    munmap((void*)hbm_prp1_virt_base, HBM_MMAP_SIZE);
+    munmap((void*)hbm_prp2_virt_base, HBM_MMAP_SIZE);
+
+    return 0;
+}
+
+
+
+
+
+
+
+
+
 
 void print_mem(uint64_t *mem, int length) {
     printf("=============================\n");
@@ -468,7 +806,7 @@ int nvme_create_sq(int ssd_id, uint16_t sq_id, uint16_t cq_id, uint16_t sq_depth
 }
 
 
-int get_smart_info(int ssd_id, uint64_t phys_addr)
+int get_smart_info(int ssd_id, uint64_t queue_phys_base)
 {
     uint32_t command[16];
     // Now fill in each dw of command.
@@ -482,8 +820,8 @@ int get_smart_info(int ssd_id, uint64_t phys_addr)
         command[i] = 0;
     }
     // DW 6-7: bit 63-0 PRP1
-    command[6] = (uint32_t)(phys_addr & 0xffffffff);
-    command[7] = (uint32_t)(phys_addr >> 32);
+    command[6] = (uint32_t)(queue_phys_base & 0xffffffff);
+    command[7] = (uint32_t)(queue_phys_base >> 32);
     // DW 8-9: bit 63-0 PRP2, rsvd in this case.
     command[8] = 0;
     command[9] = 0;
@@ -503,7 +841,7 @@ int get_smart_info(int ssd_id, uint64_t phys_addr)
     return wait_for_next_cqe(ssd_id);
 }
 
-int get_temperature_info(int ssd_id, uint64_t phys_addr)
+int get_temperature_info(int ssd_id, uint64_t queue_phys_base)
 {
     uint32_t command[16];
     // Now fill in each dw of command.
@@ -517,8 +855,8 @@ int get_temperature_info(int ssd_id, uint64_t phys_addr)
         command[i] = 0;
     }
     // DW 6-7: bit 63-0 PRP1
-    command[6] = (uint32_t)(phys_addr & 0xffffffff);
-    command[7] = (uint32_t)(phys_addr >> 32);
+    command[6] = (uint32_t)(queue_phys_base & 0xffffffff);
+    command[7] = (uint32_t)(queue_phys_base >> 32);
     // DW 8-9: bit 63-0 PRP2, rsvd in this case.
     command[8] = 0;
     command[9] = 0;
@@ -539,13 +877,13 @@ int get_temperature_info(int ssd_id, uint64_t phys_addr)
 }
 
 /**
- * Send Identify Controller command and receive the result in the buffer (phys_addr)
+ * Send Identify Controller command and receive the result in the buffer (queue_phys_base)
  *
  * @param ssd_id     : SSD identifier among multiple devices
- * @param phys_addr  : Physical buffer address to receive Identify result (used as PRP1)
+ * @param queue_phys_base  : Physical buffer address to receive Identify result (used as PRP1)
  * @return           : Status Field from the CQ (non-zero value indicates an error)
  */
-int nvme_identify_controller(int ssd_id, uint64_t phys_addr)
+int nvme_identify_controller(int ssd_id, uint64_t queue_phys_base)
 {
 
     uint32_t command[16];
@@ -559,8 +897,8 @@ int nvme_identify_controller(int ssd_id, uint64_t phys_addr)
     command[1] = 0x0;
 
     // DW6~7: PRP1에 Identify Data를 받을 물리 주소 지정
-    command[6] = (uint32_t)(phys_addr & 0xffffffff);
-    command[7] = (uint32_t)((phys_addr >> 32) & 0xffffffff);
+    command[6] = (uint32_t)(queue_phys_base & 0xffffffff);
+    command[7] = (uint32_t)((queue_phys_base >> 32) & 0xffffffff);
 
     // DW8~9: PRP2는 4KB 넘게 받을 때 주로 사용하므로 여기서는 0
     command[8] = 0;
@@ -579,308 +917,4 @@ int nvme_identify_controller(int ssd_id, uint64_t phys_addr)
 
     // CQ completion까지 폴링
     return wait_for_next_cqe(ssd_id);
-}
-
-int main(int argc, char **argv)
-{
-
-    memset(io_sq_tail, 0, sizeof(io_sq_tail));
-    memset(io_cq_head, 0, sizeof(io_cq_head));
-    memset(io_phase_bit, 0, sizeof(io_phase_bit));
-    memset(io_command_id, 0, sizeof(io_command_id));
-
-    FILE *fp;
-    int fd;
-    void *map_base, *hugepg_base, *virt_addr;
-    off_t target_offset = NVME_ADMIN_SUBMISSION_QUEUE_BASE_ADDR_OFFSET;
-
-    uint64_t nvme_pcie_bar_base = 0;
-
-    sda::utils::CmdLineParser parser;
-
-    parser.addSwitch("--xclbin_file", "-x", "input binary file string", "");
-    parser.addSwitch("--device_id", "-d", "device index", "0");
-    parser.parse(argc, argv);
-
-    std::string binaryFile = parser.value("xclbin_file");
-    int device_index = stoi(parser.value("device_id"));
-
-    if (argc < 3) {
-        parser.printHelp();
-        exit(EXIT_FAILURE);
-    }
-
-    std::cout << "Open the device" << device_index << std::endl;
-    auto device = xrt::device(device_index);
-    std::cout << "Load the xclbin " << binaryFile << std::endl;
-    auto uuid = device.load_xclbin(binaryFile);
-    
-    fp = fopen(NVME_RESOURCE_FILE, "rb");
-    if (fp == NULL) {
-        perror("fopen nvme resource file");
-        exit(EXIT_FAILURE);
-    }
-
-    fscanf(fp, "0x%lx", &nvme_pcie_bar_base);
-    fclose(fp);
-
-    printf("BAR 0 of nvme device (physical address) is 0x%lx\n", nvme_pcie_bar_base);
-
-    fd = open("/dev/hugepage_dev", O_RDWR);
-    if (fd < 0) {
-        perror("open hugepage");
-        return 1;
-    }
-
-    uint64_t phys_addr;
-    if (ioctl(fd, IOCTL_GET_PHYS_ADDR, &phys_addr) < 0) {
-        perror("ioctl");
-        close(fd);
-        return 1;
-    }
-    printf("Huge page physical address: 0x%lx\n", phys_addr);
-
-    void *huge_base = mmap(NULL, HUGEPAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    memset(huge_base, 0, HUGEPAGE_SIZE);
-    mlock(huge_base, HUGEPAGE_SIZE);
-    // ((volatile char *)queue_virt_base)[0] = 0;
-
-    queue_virt_base = (uint64_t)huge_base;
-    int mfd = open("/dev/mem", O_RDWR | O_SYNC);
-
-    ssd_virt_base[0] = (uint64_t) mmap(0, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mfd, nvme_pcie_bar_base);
-    memset((void *)ssd_virt_base[0], 0, MAP_SIZE);
-
-    print_bar(0, 10);
-
-    if (huge_base == MAP_FAILED) {
-        perror("mmap");
-        exit(EXIT_FAILURE);
-    }
-
-    printf("Hugepage allocated at virtual address: %p\n", (void*)queue_virt_base);
-
-    queue_phys_base = phys_addr;
-    printf("Hugepage physical address: 0x%lx\n", queue_phys_base);
-    if (queue_phys_base == 0) {
-        fprintf(stderr, "Failed to get physical address\n");
-        munmap(huge_base, HUGEPAGE_SIZE);
-        return 1;
-    }
-
-    uint64_t nvme_ctrl_cap = *(volatile uint64_t *)(ssd_virt_base[0]);
-    uint64_t nvme_ctrl_mpsmin = (nvme_ctrl_cap >> 48) & 0xf;
-    if (nvme_ctrl_mpsmin > 0)
-    {
-        fprintf(stderr, "ERROR: The nvme device doesn't support 4KB page.\n");
-        exit(1);
-    }
-    uint64_t nvme_ctrl_dstrd = (nvme_ctrl_cap >> 32) & 0xf;
-    printf("Doorbell stride: %lu\n", nvme_ctrl_dstrd);
-
-    if (nvme_ctrl_dstrd > 0)
-    {
-        fprintf(stderr, "ERROR: The nvme device doesn't support 4B doorbell stride.\n");
-        exit(1);
-    }
-    uint64_t nvme_ctrl_mqes = nvme_ctrl_cap & 0xffff;
-    if (nvme_ctrl_mqes < 32)
-    {
-        fprintf(stderr, "ERROR: The nvme device doesn't support 32 queue entries.\n");
-        exit(1);
-    }
-    // printf("NVMe CAP register: 0x%016lx\n", nvme_ctrl_cap);
-    // printf("Doorbell stride: %lu\n", nvme_ctrl_dstrd);
-    // dstrd = 0, 2^0 = 1, 1 * 4 = 4
-
-    volatile uint32_t *nvme_cc_pt = (volatile uint32_t *)(ssd_virt_base[0] + 0x14);
-    *nvme_cc_pt = 0x460000;
-    printf("NVMe CC register: 0x%08x\n", *nvme_cc_pt);
-
-    volatile uint32_t *nvme_csts_pt = (volatile uint32_t *)(ssd_virt_base[0]+ 0x1C);
-    while (*nvme_csts_pt != 0) {
-        sleep(1);
-        // printf("Waiting for controller to be ready. CSTS is %08x.\n", *nvme_csts_pt);
-    }
-    printf("System reset complete. CSTS is %08x.\n", *nvme_csts_pt);
-
-    // Set admin queue size to 0x1F (32)
-    volatile uint32_t *nvme_aqa_pt = (uint32_t *)(ssd_virt_base[0] + 0x24);
-    // Set SQ,CQ depth to 0x1F
-    *nvme_aqa_pt = (ADMIN_QUEUE_DEPTH << 16) + ADMIN_QUEUE_DEPTH;
-    printf("NVMe AQA register: 0x%016x\n", *nvme_aqa_pt);
-
-    // Set admin SQ base address
-    uint64_t *nvme_asq_pt = (uint64_t *)(ssd_virt_base[0]+ 0x28);
-    *nvme_asq_pt = SSD_ADMIN_SQ_PHYS_BASE(0); // Memory address of admin SQ 
-    printf("NVMe ASQ register: 0x%016lx\n", *nvme_asq_pt);
-
-    uint64_t *nvme_acq_pt = (uint64_t *)(ssd_virt_base[0] + 0x30);
-    *nvme_acq_pt = SSD_ADMIN_CQ_PHYS_BASE(0); // Memory address of admin CQ
-    printf("NVMe ACQ register: 0x%016lx\n", *nvme_acq_pt);
-
-    *nvme_cc_pt = 0x460001;
-    printf("NVMe CC register: 0x%08x\n", *nvme_cc_pt); 
-
-    uint64_t *tmp = (uint64_t *)(ssd_virt_base[0] + 0x68);
-    // *tmp = 0xf0;
-
-    nvme_csts_pt = (volatile uint32_t *)(ssd_virt_base[0] + 0x1C);
-    while(*nvme_csts_pt == 0) {
-        sleep(1);
-        // printf("Waiting for controller to be ready. CSTS is %08x.\n", *nvme_csts_pt);
-    }
-    printf("Controller ready. CSTS is %08x.\n", *nvme_csts_pt);
-    
-    print_bar(0, 10);
-
-    admin_sq_tl[0] = 0;
-    admin_cq_hd[0] = 0;
-
-    printf("Admin SQ physical base address: %lx\n", SSD_ADMIN_SQ_PHYS_BASE(0));
-    printf("Admin CQ physical base address: %lx\n", SSD_ADMIN_CQ_PHYS_BASE(0));
-    printf("Admin SQ virt base address: %lx\n", SSD_ADMIN_SQ_VIRT_BASE(0));
-    printf("Admin CQ virt base address: %lx\n", SSD_ADMIN_CQ_VIRT_BASE(0));
-
-    volatile uint32_t *nvme_cq_base = (volatile uint32_t*)SSD_ADMIN_CQ_VIRT_BASE(0);
-    for (int i = 0; i < 128; i++)
-        nvme_cq_base[i] = 0;
-
-    printf("Created the ADMIN queue pair.\n");
-
-    uint64_t identify_buf_phys = queue_phys_base + 0x20000;
-    uint8_t *identify_buf_virt = (uint8_t *)(queue_virt_base + 0x20000);
-
-    // 만약 식별된 정보를 담을 버퍼를 4KB 초기화
-    memset(identify_buf_virt, 0, 4096);
-
-    // 실제 Identify Controller 명령 실행
-    int status = nvme_identify_controller(0, identify_buf_phys);
-    if (status != 0) {
-        fprintf(stderr, "Identify Controller command failed, status=0x%x\n", status);
-    } else {
-        // identify_buf_virt에 컨트롤러 정보 구조체가 담김
-        // NVMe 1.4 spec 기준 4096바이트 구조체 (Identify Controller Data Structure)
-        printf("PCI Vendor ID: 0x%04x\n", *(uint16_t *)(identify_buf_virt + 0x00));
-        // 등등 필요한 필드를 파싱
-    }
-
-    int cmd_ret;
-    cmd_ret = nvme_set_num_of_qp(0, 1);
-    if (cmd_ret != 0) {
-        fprintf(stderr, "Failed to set the queue pair\n");
-        return 1;
-    }
-
-    uint64_t cq_addr = SSD_IO_CQ_PHYS_BASE(0, 1);
-    printf("CQ address: 0x%lx\n", cq_addr);
-    uint16_t qid = 1;
-    uint16_t queue_depth = 128;
-
-    cmd_ret = nvme_create_cq(0, qid, queue_depth, cq_addr);
-    if (cmd_ret != 0) {
-        fprintf(stderr, "Failed to create the queue pair\n");
-        return 1;
-    }
-
-    uint64_t sq_addr = SSD_IO_SQ_PHYS_BASE(0, 1);
-    cmd_ret = nvme_create_sq(0, qid, qid, queue_depth, sq_addr);
-    if (cmd_ret != 0) {
-        fprintf(stderr, "Failed to create the queue pair\n");
-        return 1;
-    }
-
-
-    printf("sq_addr: 0x%lx\n", sq_addr);
-    printf("cq_addr: 0x%lx\n", cq_addr);
-    
-    printf("IO queue pair created.\n");
-
-    uint64_t buffer_phys = (uint64_t)(queue_phys_base + 0x10000);
-
-    cmd_ret = get_smart_info(0, buffer_phys);
-    if (cmd_ret != 0) {
-        fprintf(stderr, "Failed to get smart info\n");
-        return 1;
-    }
-    
-    uint8_t *smart_info = (uint8_t *)(huge_base + 0x10000);
-    if (smart_info[0] != 0x0) {
-        printf("SSD reported critical warning 0x%02x\n", smart_info[0]);
-    }
-
-    uint16_t temperature_kelvin = *(uint16_t *)(smart_info + 1);
-    int temperature_celsius = temperature_kelvin - 273;
-
-    printf("SSD Temperature: %u K (%d°C)\n", temperature_kelvin, temperature_celsius);
-
-    auto ip = xrt::ip(device, uuid, "nvme_driver_top:{nvme_driver_top_1}");
-    auto packet_generator_krnl = xrt::kernel(device, uuid, "packet_generator");
-
- 
-    uint64_t prp2_phys = queue_phys_base + 0x10000;
-    uint8_t *prp2_virt = (uint8_t *)(huge_base + 0x10000);
-    memset(prp2_virt, 0, 0x10000);
-
-    uint64_t io_buf_phys = queue_phys_base + 0x5000;
-    uint8_t *io_buf_virt = (uint8_t *)(huge_base + 0x5000);
-    memset(io_buf_virt, 0x33, 7 * 4096);  // 4096바이트(1블록) 예시
-    
-    uint32_t tail = io_sq_tail[0][1];
-
-    ip.write_register(0x34, (FPGA_IO_SQ_BASE) & 0xFFFFFFFF);
-    ip.write_register(0x38, (FPGA_IO_SQ_BASE >> 32) & 0xFFFFFFFF);
-
-    ip.write_register(0x28, (FPGA_IO_CQ_BASE) & 0xFFFFFFFF);
-    ip.write_register(0x2c, (FPGA_IO_CQ_BASE >> 32) & 0xFFFFFFFF);
-
-    ip.write_register(0x40, (FPGA_SQ_DOORBELL_BASE) & 0xFFFFFFFF);    
-    ip.write_register(0x44, (FPGA_SQ_DOORBELL_BASE >> 32) & 0xFFFFFFFF);
-
-    // ip.write_register(0x4C, (FPGA_SQ_DOORBELL_BASE) & 0xFFFFFFFF);    
-    // ip.write_register(0x50, (FPGA_SQ_DOORBELL_BASE >> 32) & 0xFFFFFFFF);
-
-    ip.write_register(0x7c, (prp2_phys) & 0xFFFFFFFF);    
-    ip.write_register(0x80, (prp2_phys >> 32) & 0xFFFFFFFF);
-
-    ip.write_register(0x88, (FPGA_PRP_BASE) & 0xFFFFFFFF);    //prp2_vaddr1
-    ip.write_register(0x8c, (FPGA_PRP_BASE >> 32) & 0xFFFFFFFF); //prp2_vaddr2
-
-
-    sleep(3);
-
-    volatile uint32_t *cq_hdbell =
-    (uint32_t *)(ssd_virt_base[0] + 0x1000 + (2 * 1 + 1) * 4);
-
-    auto packet_generator_run = packet_generator_krnl(0x1, 300, 3, io_buf_phys, 1);
-    packet_generator_run.wait();
-
-    sleep(1);
-    // *cq_hdbell = 1;
-
-    memset(io_buf_virt, 0x31, 5 * 4096);  // 
-
-    // packet_generator_run = packet_generator_krnl(0x1, 150, 5, io_buf_phys, 1);
-    // packet_generator_run.wait();
-    // packet_generator_run = packet_generator_krnl(0x1, 150, 5, io_buf_phys, 1);
-    // packet_generator_run.wait();
-    // packet_generator_run = packet_generator_krnl(0x1, 150, 5, io_buf_phys, 1);
-    // packet_generator_run.wait();
-     
-    sleep(1);
-    // *cq_hdbell = 2;
-
-
-    printf("mem addr : %p", prp2_phys);
-    print_mem((uint64_t*)prp2_virt, 10);
-    print_io_sq(0, 2);
-    print_io_cq(0, 2);
-
-    uint32_t completed_request_bytes = ip.read_register(0x74);
-    printf("Completed request bytes: %u\n", completed_request_bytes);
-
-    munmap((void*)ssd_virt_base[0], MAP_SIZE);
-    munmap(huge_base, HUGEPAGE_SIZE);
-
-    return 0;
 }

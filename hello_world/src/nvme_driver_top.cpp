@@ -25,6 +25,7 @@ extern "C" {
 
         uint32_t delay_cycles
     )
+    
     {
         #pragma HLS DATAFLOW disable_start_propagation
         #pragma HLS INTERFACE ap_ctrl_none port=return
@@ -34,6 +35,8 @@ extern "C" {
         #pragma HLS INTERFACE m_axi port=dbl_base_address offset=slave bundle=gmem2
         #pragma HLS INTERFACE m_axi port=dbl_base_address2 offset=slave bundle=gmem3
         #pragma HLS INTERFACE m_axi port=buffer_base_address offset=slave bundle=gmem4
+        #pragma HLS INTERFACE m_axi port=prp2_virtual_address offset=slave bundle=gmem5
+        
 
         #pragma HLS INTERFACE s_axilite port=start 
         #pragma HLS INTERFACE s_axilite port=done 

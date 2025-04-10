@@ -5,7 +5,6 @@
 #include <string.h>
 #include "nvme_tcp_driver_top.hpp"
 
-#define DATA_WIDTH 512
 
 void rw_from_net_to_nvme_drv( // Just for dummy build
     hls::stream<ap_uint<DATA_WIDTH>> &nvme_tcp_rxdata, // receive

@@ -31,8 +31,8 @@ extern "C" {
         #pragma HLS INTERFACE m_axi port=dbl_base_address offset=slave bundle=gmem2
         #pragma HLS INTERFACE m_axi port=dbl_base_address2 offset=slave bundle=gmem3
 
-        #pragma HLS INTERFACE axis port=request_packet_stream
-        #pragma HLS INTERFACE axis port=response_packet_stream
+        #pragma HLS INTERFACE m_axi port=request_packet_stream
+        #pragma HLS INTERFACE m_axi port=response_packet_stream
 
         static hls::stream<struct mgmt_table_req> submit_in_req("submit_in_req");
         #pragma HLS STREAM variable=submit_in_req depth=512

@@ -1,6 +1,7 @@
 #include <hls_stream.h>
 #include <ap_int.h>
 #include <stdint.h>
+#define DATA_WIDTH 512
 
 
 typedef struct _nvme_cqe_t
@@ -84,3 +85,29 @@ struct completion_packet {
         uint32_t raw;
     } dw0;
 };
+
+extern "C"{
+void nvme_tcp_driver_top(
+    // from network stream
+    hls::stream<ap_uint<DATA_WIDTH>> &nvme_tcp_rxdata, // receive
+    hls::stream<ap_uint<DATA_WIDTH>> &nvme_tcp_txdata, // transmit
+
+    // admin queue address
+    nvme_cqe_t *admin_cq_base_addr, // CQ base address
+    nvme_sqe_t *admin_sq_base_addr, // SQ base address
+     
+    // NVMe SSD Bar addr
+    uint32_t *bar_base_address, // Doorbell base address
+
+    // admin queue doorbell base addr
+    uint32_t *dbl_base_address, // Doorbell base address
+
+    // for identify command
+    uint64_t buffer_physical_address,
+    uint64_t* buffer_virtual_address,
+
+    // for nvme driver
+    hls::stream<struct request_packet> &nvme_request_stream,
+    hls::stream<struct completion_packet> &nvme_response_stream
+);
+}

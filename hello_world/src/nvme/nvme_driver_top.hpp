@@ -153,16 +153,7 @@ struct mgmt_table_resp {
     ap_uint<1> status;
 };
 
-extern "C" {
-void packet_generator(
-    uint32_t opcode,
-    uint64_t slba,
-    uint32_t nlb,
-    uint64_t prp1,
-    uint32_t request_count,
-    hls::stream<struct request_packet> &request_packet_stream
-);
-}
+
 
 void nvme_io_submit(
     nvme_io_command_t* io_sq_base_address,
@@ -187,6 +178,7 @@ void nvme_process_cpl(
     hls::stream<struct mgmt_table_req> &cpl_in_req,
     hls::stream<struct mgmt_table_resp> &cpl_out_resp,
     hls::stream<uint32_t> &nvme_cq_polling_stream,
+    hls::stream<struct completion_packet> &response_packet_stream,
     hls::stream<uint32_t> &sq_head_stream_write,
     uint32_t delay_cycles
 ); 
@@ -208,6 +200,7 @@ extern "C" {
         uint32_t *dbl_base_address2, // Doorbell base address
 
         hls::stream<struct request_packet> &request_packet_stream,
+        hls::stream<struct completion_packet> &response_packet_stream,
         /* NVMe Controller Completion Interface */
         uint64_t &completed_request_number,
         uint64_t &completed_request_bytes,

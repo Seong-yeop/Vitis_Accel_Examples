@@ -1,15 +1,15 @@
-#include "nvme_driver_top.hpp"
+#include "packet_generator.hpp"
 
 extern "C" {
 void packet_generator(
-    uint32_t opcode,
-    uint64_t slba,
-    uint32_t nlb,
-    uint64_t prp1,
-    uint32_t request_count,
-    hls::stream<struct request_packet> &request_packet_stream
+    hls::stream<ap_uint<DATA_WIDTH>> &nvme_tcp_rxdata,
+    hls::stream<ap_uint<DATA_WIDTH>> &nvme_tcp_txdata
 )
 {
+
+    nvme_tcp_rxdata.write(0x0); // dummy write
+    ap_uint<DATA_WIDTH> dummy_data = nvme_tcp_txdata.read(); // dummy write
+    /*
     static uint16_t cid = 0;
     uint64_t slba_base = slba;
     uint64_t prp1_base = prp1;
@@ -27,5 +27,6 @@ void packet_generator(
         prp1_base += nlb * 0x1000;
         request_packet_stream.write(req);
     }
+    */
 }
 }

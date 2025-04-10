@@ -12,6 +12,8 @@ extern "C" {
         uint32_t *dbl_base_address2, // Doorbell base address
 
         hls::stream<struct request_packet> &request_packet_stream,
+        hls::stream<struct completion_packet> &response_packet_stream,
+
         /* NVMe Controller Completion Interface */
         uint64_t &completed_request_number,
         uint64_t &completed_request_bytes,
@@ -29,7 +31,8 @@ extern "C" {
         #pragma HLS INTERFACE m_axi port=dbl_base_address offset=slave bundle=gmem2
         #pragma HLS INTERFACE m_axi port=dbl_base_address2 offset=slave bundle=gmem3
 
-        #pragma HLS INTERFACE m_axi port=request_packet_stream
+        #pragma HLS INTERFACE axis port=request_packet_stream
+        #pragma HLS INTERFACE axis port=response_packet_stream
 
         static hls::stream<struct mgmt_table_req> submit_in_req("submit_in_req");
         #pragma HLS STREAM variable=submit_in_req depth=512
@@ -93,6 +96,7 @@ extern "C" {
             cpl_in_req,
             cpl_out_resp,
             nvme_cq_polling_stream,
+            response_packet_stream,
             sq_head_stream_write,
             delay_cycles
         );

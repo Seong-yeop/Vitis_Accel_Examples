@@ -62,7 +62,7 @@ EXECUTABLE = ./hello_world_xrt
 EMCONFIG_DIR = $(TEMP_DIR)
 
 ############################## Setting up CSIM Variables ##############################
-CSIM_SRCS = ./src/nvme/nvme_driver_top.cpp ./src/testbench.cpp
+CSIM_SRCS = ./src/nvme_tcp/nvme_tcp_driver_top.cpp ./src/nvme_tcp/test_nvme_tcp.cpp
 CSIM_EXEC = ./csim_executable
 
 CSIM_FLAGS = -I$(XILINX_HLS)/include -I$(XILINX_XRT)/include -I$(XILINX_VIVADO)/include -std=c++11 -Wall -O0 -g
@@ -99,12 +99,17 @@ $(TEMP_DIR)/nvme_driver_top.xo: src/nvme/nvme_driver_top.cpp src/nvme/nvme_submi
 		-k nvme_driver_top --temp_dir $(TEMP_DIR) -I'$(<D)' \
 		-o'$@' $^
 
+$(TEMP_DIR)/nvme_tcp_driver_top.xo: src/nvme_tcp/nvme_tcp_driver_top.cpp
+	mkdir -p $(TEMP_DIR)
+	v++ -c $(VPP_FLAGS) -t $(TARGET) --platform $(PLATFORM) \
+		-k nvme_tcp_driver_top --temp_dir $(TEMP_DIR) -I'$(<D)' \
+		-o'$@' $^
 
-$(TEMP_DIR)/packet_generator.xo: src/nvme/packet_generator.cpp
+$(TEMP_DIR)/packet_generator.xo: src/packet_generator.cpp
 	mkdir -p $(TEMP_DIR)
 	v++ -c $(VPP_FLAGS) -t $(TARGET) --platform $(PLATFORM) -k packet_generator --temp_dir $(TEMP_DIR) -I'$(<D)' -o'$@' '$<'
 
-$(BUILD_DIR)/nvme_driver_top.xclbin: $(TEMP_DIR)/nvme_driver_top.xo $(TEMP_DIR)/packet_generator.xo
+$(BUILD_DIR)/nvme_driver_top.xclbin: $(TEMP_DIR)/nvme_driver_top.xo $(TEMP_DIR)/packet_generator.xo $(TEMP_DIR)/nvme_tcp_driver_top.xo
 	mkdir -p $(BUILD_DIR)
 	v++ -l $(VPP_FLAGS) $(VPP_LDFLAGS) -t $(TARGET) --platform $(PLATFORM) \
 		--temp_dir $(TEMP_DIR) -o '$(LINK_OUTPUT)' $^

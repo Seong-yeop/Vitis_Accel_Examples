@@ -11,6 +11,7 @@ void nvme_process_cpl(
     hls::stream<struct mgmt_table_req> &cpl_in_req,
     hls::stream<struct mgmt_table_resp> &cpl_out_resp,
     hls::stream<uint32_t> &nvme_cq_polling_stream,
+    hls::stream<struct completion_packet> &response_packet_stream,
     hls::stream<uint32_t> &sq_head_stream_write,
     uint32_t delay_cycles
 ) 
@@ -18,7 +19,7 @@ void nvme_process_cpl(
     #pragma HLS INTERFACE mode=m_axi port=dbl_base_address depth=512
 
     // #pragma HLS PIPELINE II=1
-    enum class cq_state {IDLE, READ_ENTRY, DELAY, UPDATE_SQ_HEAD, UPDATE_CQ_HEAD, COMPLETION, WAIT_RESP, SEND_REQ};
+    enum class cq_state {IDLE, READ_ENTRY, DELAY, UPDATE_SQ_HEAD, UPDATE_CQ_HEAD, COMPLETION, WAIT_RESP, SEND_REQ, RESP_PACKET_WRITE};
 
     static uint32_t cq_head = 0; // CQ Head
     static uint8_t cq_phase = 0; // CQ Phase   
@@ -101,8 +102,18 @@ void nvme_process_cpl(
                 resp = cpl_out_resp.read();
                 _completed_requests_bytes += (resp.rdata.nlb + 1) * 4096;
                 completed_requests_bytes = _completed_requests_bytes;
-                state = cq_state::IDLE;
+                state = cq_state::RESP_PACKET_WRITE;
             }
             break;
+        
+        case cq_state::RESP_PACKET_WRITE:
+                struct completion_packet packet;
+                packet.dw0.id = cqe.cid;
+                packet.dw0.sct = 0;
+                packet.dw0.sc = 0;
+                response_packet_stream.write(packet);
+                state = cq_state::IDLE;    
+            break;
+        
     } 
 }

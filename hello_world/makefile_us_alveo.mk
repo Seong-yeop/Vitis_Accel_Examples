@@ -56,13 +56,13 @@ LDFLAGS += -luuid -lxrt_coreutil
 
 ############################## Setting up Kernel Variables ##############################
 # Kernel compiler global settings
-VPP_FLAGS += --save-temps --config ./mailbox_auto_restart.cfg
+VPP_FLAGS += --save-temps --config ./nvme_tcp_config.cfg
 
 EXECUTABLE = ./hello_world_xrt
 EMCONFIG_DIR = $(TEMP_DIR)
 
 ############################## Setting up CSIM Variables ##############################
-CSIM_SRCS = ./src/nvme_driver_top.cpp ./src/testbench.cpp
+CSIM_SRCS = ./src/nvme/nvme_driver_top.cpp ./src/testbench.cpp
 CSIM_EXEC = ./csim_executable
 
 CSIM_FLAGS = -I$(XILINX_HLS)/include -I$(XILINX_XRT)/include -I$(XILINX_VIVADO)/include -std=c++11 -Wall -O0 -g
@@ -93,14 +93,14 @@ $(CSIM_EXEC): $(CSIM_SRCS)
 
 ############################## Setting Rules for Binary Containers (Building Kernels) ##############################
 # Compile kernel
-$(TEMP_DIR)/nvme_driver_top.xo: src/nvme_driver_top.cpp src/nvme_submit_cmd.cpp src/nvme_process_cpl.cpp src/nvme_io_mgmt_table.cpp
+$(TEMP_DIR)/nvme_driver_top.xo: src/nvme/nvme_driver_top.cpp src/nvme/nvme_submit_cmd.cpp src/nvme/nvme_process_cpl.cpp src/nvme/nvme_io_mgmt_table.cpp
 	mkdir -p $(TEMP_DIR)
 	v++ -c $(VPP_FLAGS) -t $(TARGET) --platform $(PLATFORM) \
 		-k nvme_driver_top --temp_dir $(TEMP_DIR) -I'$(<D)' \
 		-o'$@' $^
 
 
-$(TEMP_DIR)/packet_generator.xo: src/packet_generator.cpp
+$(TEMP_DIR)/packet_generator.xo: src/nvme/packet_generator.cpp
 	mkdir -p $(TEMP_DIR)
 	v++ -c $(VPP_FLAGS) -t $(TARGET) --platform $(PLATFORM) -k packet_generator --temp_dir $(TEMP_DIR) -I'$(<D)' -o'$@' '$<'
 
@@ -147,7 +147,7 @@ endif
 clean:
 	-$(RMDIR) $(EXECUTABLE) $(CSIM_EXEC) $(XCLBIN)/{*hw_emu*} 
 	-$(RMDIR) profile_* TempConfig system_estimate.xtxt *.rpt *.csv 
-	-$(RMDIR) src/*.ll *v++* .Xil emconfig.json dltmp* xmltmp* *.log *.jou *.wcfg *.wdb
+	-$(RMDIR) src/*.ll src/nvme/*.ll *v++* .Xil emconfig.json dltmp* xmltmp* *.log *.jou *.wcfg *.wdb
 
 cleanall: clean
 	-$(RMDIR) build_dir*

@@ -28,7 +28,7 @@ build*
 _x*
 !x3h/rx_exerciser_tx_passthrough/pcaprecv.txt
 !x3h/rx_exerciser_tx_passthrough/pcapsend.txt
-
+.ipcache/
 
 solution1/
 nvme_driver_top/

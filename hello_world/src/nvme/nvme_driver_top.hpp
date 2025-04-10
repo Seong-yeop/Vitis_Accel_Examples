@@ -168,7 +168,6 @@ void nvme_io_submit(
     nvme_io_command_t* io_sq_base_address,
     nvme_cqe_t *io_cq_base_address,
     uint32_t *dbl_base_address,
-    uint64_t *buffer_base_address,
     // uint32_t &sq_tail,
     uint64_t prp2_physical_address,
     uint64_t* prp2_virtual_address,
@@ -203,15 +202,10 @@ void mgmt_table(
 
 extern "C" {
     void nvme_driver_top(
-        uint32_t &start,
-        uint32_t &done,
-        uint32_t &done_ack,
-
         nvme_cqe_t *io_cq_base_addr, // CQ base address
         nvme_io_command_t *io_sq_base_addr, // SQ base address
         uint32_t *dbl_base_address, // Doorbell base address
         uint32_t *dbl_base_address2, // Doorbell base address
-        uint64_t *buffer_base_address,
 
         hls::stream<struct request_packet> &request_packet_stream,
         /* NVMe Controller Completion Interface */

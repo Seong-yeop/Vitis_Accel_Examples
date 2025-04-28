@@ -384,7 +384,7 @@ static inline unsigned words_needed(uint32_t bytes)
 
 
 static void parse_id_ctrl(const struct nvme_id_ctrl* id){
-    printf("-- Identify Controller (selected fields) -- \n");
+    printf("--------------- Identify Controller (selected fields) ---------\n");
     printf(" VID     : 0x%04X\n",id->vid);
     printf(" SSVID   : 0x%04X\n",id->ssvid);
     printf(" SN      : %s\n",id-> sn);
@@ -407,30 +407,32 @@ static void parse_id_ctrl(const struct nvme_id_ctrl* id){
 static void parse_id_ns(const nvme_id_ns* ns)
 {
     /* 1. 기본 헤더 ------------------------------------------------------ */
-    printf("-- Identify Namespace (selected fields) -- \n");
+    printf("------------- Identify Namespace (selected fields) ------------\n");
     printf(" NSZE  : %u blocks\n", ns->nsze);
     printf(" NCAP  : %u blocks\n", ns->ncap);
     printf(" NUSE  : %u blocks\n", ns->nuse);
     printf(" NLBAF  : %u blocks\n", ns->nlbaf);
     printf(" LBAF[0].DS : %u blocks\n", ns->lbaf[0].ds);
-    printf("---------------------------------------------------------------\n\n");
+    printf("---------------------------------------------------------------\n");
 }
 static void parse_active_ns(const struct id_active_ns_list* lst){
-    printf("-- Active NS Lists (selected fields) -- \n");
+    printf("------------- Active NS Lists (selected fields) ---------------\n");
+
     for(int i=0;i<10;++i) printf(" NS[%d] : %u\n",i, lst->cns[i]);
-    printf("---------------------------------------------------------------\n\n");
+    printf("---------------------------------------------------------------\n");
 }
 static void parse_ns_desc(const struct identify_namespace_descriptor* base,size_t len){
-    printf("-- Namespace Descriptor(s) --\n");
+    printf("------------------- Namespace Descriptor(s) -------------------\n");
+    
     const uint8_t* p=(const uint8_t*)base; size_t off=0,idx=0;
     while(off+2<=len){
         uint8_t nidt=p[off]; uint8_t nidl=p[off+1];
         if(nidl==0||off+2+nidl>len) break;
-        printf("  Desc %zu\n, NIDT=0x%02X NIDL=%u NID=",idx,nidt,nidl);
+        printf(" Desc %zu: NIDT=0x%02X NIDL=%u NID=",idx,nidt,nidl);
         for(int i=0;i<nidl && i<16;++i) printf("%02X",p[off+2+i]); printf("\n");
         off+=2+nidl; ++idx;
     }
-    printf("---------------------------------------------------------------\n\n");
+    printf("---------------------------------------------------------------\n");
 
 }
 // ---------------------------------------------------------------------------

@@ -1,10 +1,3 @@
-// nvme_tcp_testbench_refactored.cpp
-// ------------------------------------------------------------
-// 각 CH‑PSH 쌍을 명령(종류)별 함수로 분리한 테스트벤치 예시.
-// 원본 로직은 건드리지 않고 "무엇을 언제 내보내는지"만 슬림하게
-// 함수로 묶었습니다. 필요하면 더 많은 명령을 같은 패턴으로 추가하세요.
-// ------------------------------------------------------------
-
 #include <stdio.h>
 #include "nvme_tcp_driver_top.hpp"
 #include <hls_stream.h>
@@ -31,7 +24,7 @@ make_capsule_header(ap_uint<8>  TYPE,
 }
 
 // ---------------------------------------------------------------------------
-// Fabric 단계 ---------------------------------------------------------------
+// Make Connection -----------------------------------------------------------
 // ---------------------------------------------------------------------------
 
 void sendICReq(hls::stream<ap_uint<DATA_WIDTH>>& rx, uint16_t cid)
@@ -186,7 +179,7 @@ void sendGetVer(hls::stream<ap_uint<DATA_WIDTH>>& rx, uint16_t cid)
 }
 
 // ---------------------------------------------------------------------------
-// Admin 명령 ---------------------------------------------------------------
+// ADMIN command -------------------------------------------------------------
 // ---------------------------------------------------------------------------
 
 void sendAdminIdentifyCtrl(hls::stream<ap_uint<DATA_WIDTH>>& rx, uint16_t cid)
@@ -406,7 +399,7 @@ static void parse_id_ctrl(const struct nvme_id_ctrl* id){
 
 static void parse_id_ns(const nvme_id_ns* ns)
 {
-    /* 1. 기본 헤더 ------------------------------------------------------ */
+    /*  ------------------------------------------------------ */
     printf("------------- Identify Namespace (selected fields) ------------\n");
     printf(" NSZE  : %u blocks\n", ns->nsze);
     printf(" NCAP  : %u blocks\n", ns->ncap);
@@ -436,7 +429,7 @@ static void parse_ns_desc(const struct identify_namespace_descriptor* base,size_
 
 }
 // ---------------------------------------------------------------------------
-// 메인 ----------------------------------------------------------------------
+// Main ----------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 
 int main()
@@ -470,24 +463,24 @@ int main()
     } 
         
    
-    // 결과 덤프 ---------------------------------------------------------------
+    // Dump result ---------------------------------------------------------------
     int capsule_idx = 0;    
     uint8_t buffer[BUF_SIZE];
     int cid;
     int verbose = 1;
     while (!nvme_tcp_txdata.empty()) {
-        // ① 첫 word = Capsule Header (CH) + 일부/전체 Payload
+      
         ap_uint<DATA_WIDTH> first = nvme_tcp_txdata.read();
         dump_capsule_header(first, capsule_idx);
         uint8_t TYPE  = first.range(7,0);
         uint8_t PDO   = first.range(31,24);
         if(TYPE == 0x07) cid = first.range(79,64);
 
-        // ② CH 출력 이후 필요 word 수 계산하여 skip
+    
         uint32_t plen_bytes = first.range(63,32).to_uint();
         uint32_t hlen_bytes = first.range(23,16).to_uint();
         unsigned total_words = (TYPE == 0x1)? 2 : (TYPE == 0x7)? words_needed(plen_bytes - hlen_bytes) + 1 : 1;
-        // 첫 word는 이미 소비 → 나머지 word skip
+        
         for (unsigned w = 1; w < total_words && !nvme_tcp_txdata.empty(); ++w){
             ap_uint<DATA_WIDTH> data_packet = nvme_tcp_txdata.read();
             if(w % 16 == 0 || w == (total_words - 1)) printf("[Capsule %d] Packet %d/%d read\n", capsule_idx, w, total_words-1);

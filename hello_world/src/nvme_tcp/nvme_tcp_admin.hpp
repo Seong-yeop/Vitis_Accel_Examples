@@ -185,97 +185,96 @@ struct nvme_connect_params {
 
 
 
-// struct nvme_id_ctrl {
-
-// 	uint16_t  vid; // 01:00
-// 	uint16_t  ssvid; // 03:02
-// 	char sn[20]; // 23:04
-// 	char mn[40]; // 63:24
-// 	char fr[8]; // 71:64
-// 	uint8_t   rab; // 72:72
-// 	uint8_t   ieee[3]; // 75:73
-// 	uint8_t   cmic; // 76
-// 	uint8_t   mdts; // 77
-// 	uint16_t  cntlid; // 79:78
-// 	uint32_t  ver; // 83:80
-// 	uint32_t  rtd3r; // 87:84
-// 	uint32_t  rtd3e; // 91:88
-// 	uint32_t  oaes; //  95:92
-// 	uint32_t  ctratt; // 99:96
-// 	uint16_t  rrls; // 101:100
-// 	uint8_t   revsd1[9]; // 110:102
-// 	uint8_t   cntrltype;
-// 	char fguid[16];
-// 	uint16_t  crdt1;
-// 	uint16_t  crdt2;
-// 	uint16_t  crdt3;
-// 	uint8_t   resvd2[122];
-// 	uint16_t  oacs;
-// 	uint8_t   acl;
-// 	uint8_t   aerl;
-// 	uint8_t   frmw;
-// 	uint8_t   apl;
-// 	uint8_t   elpe;
-// 	uint8_t   npss;
-// 	uint8_t   avscc;
-// 	uint8_t   apsta;
-// 	uint16_t  wctemp;
-// 	uint16_t  cctemp;
-// 	uint16_t  mtfa;
-// 	uint32_t  hmpre;
-// 	uint32_t  hmmin;
-// 	uint64_t  tnvmcap;
-// 	uint64_t  tnvmcap_hi;
-// 	uint64_t  unvmcap;
-// 	uint64_t  unvmcap_hi;
-// 	uint32_t  rpmbs;
-// 	uint16_t  edstt;
-// 	uint8_t   dsto;
-// 	uint8_t   fwug;
-// 	uint16_t  kas;
-// 	uint16_t  hctma;
-// 	uint16_t  mntmt;
-// 	uint16_t  mxtmt;
-// 	uint32_t  sanicap;
-// 	uint32_t  hmminds;
-// 	uint16_t  hmmaxd;
-// 	uint16_t  nsetidmax;
-// 	uint16_t  endgidmax;
-// 	uint8_t   anatt;
-// 	uint8_t   anacap;
-// 	uint32_t  anagrpmax;
-// 	uint32_t  nanagrpid;
-// 	uint32_t  pels;
-// 	uint8_t   resvd3[156];
-// 	uint8_t   sqes;
-// 	uint8_t   cqes;
-// 	uint16_t  maxcmd;
-// 	uint32_t  nn;
-// 	uint16_t  oncs;
-// 	uint16_t  fuses;
-// 	uint8_t   fna;
-// 	uint8_t   vwc;
-// 	uint16_t  awun;
-// 	uint16_t  awupf;
-// 	uint8_t   nvscc;
-// 	uint8_t   nwpc;
-// 	uint16_t  acwu;
-// 	uint8_t   resvd4[2];
-// 	uint32_t  sgls;
-// 	uint32_t  mnan;
-// 	uint8_t   resvd5[224];
-// 	char subnqn[256]; //768:1023, SUBNQN
-// 	uint8_t   resvd6[768];
-// 	uint32_t  ioccsz;
-// 	uint32_t  iorcsz;
-// 	uint16_t  icdoff;
-// 	uint8_t   ctrattr; //
-// 	uint8_t   msdbd; // 1803
-// 	uint8_t   resvd7[244]; // 2047:1804 ( Fabrics)
-// 	uint8_t   psd[1024]; // 3071:2048 
-// 	uint8_t   vs[1024]; // 4095:3072
-// }; // 4096B
-// #define NVME_ID_CTRL_LEN 4096
+struct nvme_id_ctrl {
+	uint16_t  vid; // 01:00
+	uint16_t  ssvid; // 03:02
+	char sn[20]; // 23:04
+	char mn[40]; // 63:24
+	char fr[8]; // 71:64
+	uint8_t   rab; // 72:72
+	uint8_t   ieee[3]; // 75:73
+	uint8_t   cmic; // 76
+	uint8_t   mdts; // 77
+	uint16_t  cntlid; // 79:78
+	uint32_t  ver; // 83:80
+	uint32_t  rtd3r; // 87:84
+	uint32_t  rtd3e; // 91:88
+	uint32_t  oaes; //  95:92
+	uint32_t  ctratt; // 99:96
+	uint16_t  rrls; // 101:100
+	uint8_t   revsd1[9]; // 110:102
+	uint8_t   cntrltype;
+	char fguid[16];
+	uint16_t  crdt1;
+	uint16_t  crdt2;
+	uint16_t  crdt3;
+	uint8_t   resvd2[122];
+	uint16_t  oacs;
+	uint8_t   acl;
+	uint8_t   aerl;
+	uint8_t   frmw;
+	uint8_t   apl;
+	uint8_t   elpe;
+	uint8_t   npss;
+	uint8_t   avscc;
+	uint8_t   apsta;
+	uint16_t  wctemp;
+	uint16_t  cctemp;
+	uint16_t  mtfa;
+	uint32_t  hmpre;
+	uint32_t  hmmin;
+	uint64_t  tnvmcap;
+	uint64_t  tnvmcap_hi;
+	uint64_t  unvmcap;
+	uint64_t  unvmcap_hi;
+	uint32_t  rpmbs;
+	uint16_t  edstt;
+	uint8_t   dsto;
+	uint8_t   fwug;
+	uint16_t  kas;
+	uint16_t  hctma;
+	uint16_t  mntmt;
+	uint16_t  mxtmt;
+	uint32_t  sanicap;
+	uint32_t  hmminds;
+	uint16_t  hmmaxd;
+	uint16_t  nsetidmax;
+	uint16_t  endgidmax;
+	uint8_t   anatt;
+	uint8_t   anacap;
+	uint32_t  anagrpmax;
+	uint32_t  nanagrpid;
+	uint32_t  pels;
+	uint8_t   resvd3[156];
+	uint8_t   sqes;
+	uint8_t   cqes;
+	uint16_t  maxcmd;
+	uint32_t  nn;
+	uint16_t  oncs;
+	uint16_t  fuses;
+	uint8_t   fna;
+	uint8_t   vwc;
+	uint16_t  awun;
+	uint16_t  awupf;
+	uint8_t   nvscc;
+	uint8_t   nwpc;
+	uint16_t  acwu;
+	uint8_t   resvd4[2];
+	uint32_t  sgls;
+	uint32_t  mnan;
+	uint8_t   resvd5[224];
+	char subnqn[256]; //768:1023, SUBNQN
+	uint8_t   resvd6[768];
+	uint32_t  ioccsz;
+	uint32_t  iorcsz;
+	uint16_t  icdoff;
+	uint8_t   ctrattr; //
+	uint8_t   msdbd; // 1803
+	uint8_t   resvd7[244]; // 2047:1804 ( Fabrics)
+	uint8_t   psd[1024]; // 3071:2048 
+	uint8_t   vs[1024]; // 4095:3072
+}; // 4096B
+#define NVME_ID_CTRL_LEN 4096
 // static const struct nvme_id_ctrl nvme_id_ctrl_const = {
 //     /* 00h */ .sn      = "SN1234567890",          /* Serial Number (20 B)  */
 //     /* 18h */ .mn      = "CSL NVMe-TCP Model",    /* Model Number  (40 B)  */
@@ -366,10 +365,10 @@ static const ap_uint<8> nvme_id_ctrl_const_packet[64][64] = {
     /* [13]-[63] : (omitted) – automatically zero-initialised --------------- */
 };
 
-// struct id_active_ns_list {
-//     unsigned int cns[1024];
-// }; // 4096B
-// #define NVME_ID_ACTIVE_NS_LEN 4096
+struct id_active_ns_list {
+    unsigned int cns[1024];
+}; // 4096B
+#define NVME_ID_ACTIVE_NS_LEN 4096
 
 // static const struct id_active_ns_list identify_active_ns_list_const = {
 //     .cns = {0x1} // NSID=1
@@ -382,6 +381,12 @@ static const ap_uint<8> nvme_id_active_nsid_const_packet[64][64] = {
     /// ... 0
 };
 
+
+struct identify_namespace_descriptor {
+    uint8_t NIDT;          // offset: 0
+    uint8_t NIDL;          // offset: 1
+    uint8_t NID[16];       // offset: 4~19
+};
 
 static const ap_uint<8> id_ns_desc_const_packet[20] = {
     0x03, 0x10, 0x00, 0x00,

@@ -11,6 +11,7 @@
 #include <ap_int.h>
 
 #define DATA_WIDTH 512
+#define BUF_SIZE   4096
 
 
 static inline ap_uint<DATA_WIDTH>
@@ -360,10 +361,19 @@ static void dump_capsule_header(const ap_uint<DATA_WIDTH>& first, int idx)
     uint8_t PDO   = first.range(31,24);
     uint32_t PLEN = first.range(63,32);
 
-    printf("[Capsule %d] %-11s  TYPE=0x%02X  FLAGS=0x%02X  HLEN=%u  PDO=%u  PLEN=%u\n",
+    printf("[Capsule %d] %-11s  TYPE=0x%02X  FLAGS=0x%02X  HLEN=%u  PDO=%u  PLEN=%u",
            idx, pdu_name(TYPE), TYPE, FLAGS, HLEN, PDO, PLEN);
 
+    if(TYPE == 0x07) {
+    // C2HData
+        uint16_t cid = first.range(79,64);
+        printf(" CID=%u\n", cid);
+    }           
+    else{
+        printf("\n");
+    }
     if (TYPE == 0x05) dump_cqe(first);
+    
 }
 
 static inline unsigned words_needed(uint32_t bytes)
@@ -372,6 +382,57 @@ static inline unsigned words_needed(uint32_t bytes)
     return (bytes + 63) / 64;
 }
 
+
+static void parse_id_ctrl(const struct nvme_id_ctrl* id){
+    printf("-- Identify Controller (selected fields) -- \n");
+    printf(" VID     : 0x%04X\n",id->vid);
+    printf(" SSVID   : 0x%04X\n",id->ssvid);
+    printf(" SN      : %s\n",id-> sn);
+    printf(" MN      : %s\n",id-> mn);
+    printf(" FR      : %s\n",id-> fr);
+    printf(" MDTS    : 1 << %u = %u bytes\n",id->mdts, 1u<<id->mdts);
+    printf(" CNTLID  : %u\n",id->cntlid);
+    printf(" VER     : 0x%06X (Major:%u Minor:%u)\n",id->ver, (id->ver>>16)&0xFFFF, id->ver&0xFFFF);
+    printf(" KAS     : 0x%04X\n",id->kas);
+    printf(" SQES    : 0x%02X (Min %u, Max %u)\n",id->sqes, id->sqes&0xF, id->sqes>>4);
+    printf(" CQES    : 0x%02X (Min %u, Max %u)\n",id->cqes, id->cqes&0xF, id->cqes>>4);
+    printf(" MAXCMD  : %u\n",id->maxcmd);
+    printf(" NN      : %u\n",id->nn);
+    printf(" SGLS    : 0x%08X\n",id->sgls);
+    printf(" SUBNQN  : %s\n",id->subnqn);
+    printf("---------------------------------------------------------------\n\n");
+
+}
+
+static void parse_id_ns(const nvme_id_ns* ns)
+{
+    /* 1. 기본 헤더 ------------------------------------------------------ */
+    printf("-- Identify Namespace (selected fields) -- \n");
+    printf(" NSZE  : %u blocks\n", ns->nsze);
+    printf(" NCAP  : %u blocks\n", ns->ncap);
+    printf(" NUSE  : %u blocks\n", ns->nuse);
+    printf(" NLBAF  : %u blocks\n", ns->nlbaf);
+    printf(" LBAF[0].DS : %u blocks\n", ns->lbaf[0].ds);
+    printf("---------------------------------------------------------------\n\n");
+}
+static void parse_active_ns(const struct id_active_ns_list* lst){
+    printf("-- Active NS Lists (selected fields) -- \n");
+    for(int i=0;i<10;++i) printf(" NS[%d] : %u\n",i, lst->cns[i]);
+    printf("---------------------------------------------------------------\n\n");
+}
+static void parse_ns_desc(const struct identify_namespace_descriptor* base,size_t len){
+    printf("-- Namespace Descriptor(s) --\n");
+    const uint8_t* p=(const uint8_t*)base; size_t off=0,idx=0;
+    while(off+2<=len){
+        uint8_t nidt=p[off]; uint8_t nidl=p[off+1];
+        if(nidl==0||off+2+nidl>len) break;
+        printf("  Desc %zu\n, NIDT=0x%02X NIDL=%u NID=",idx,nidt,nidl);
+        for(int i=0;i<nidl && i<16;++i) printf("%02X",p[off+2+i]); printf("\n");
+        off+=2+nidl; ++idx;
+    }
+    printf("---------------------------------------------------------------\n\n");
+
+}
 // ---------------------------------------------------------------------------
 // 메인 ----------------------------------------------------------------------
 // ---------------------------------------------------------------------------
@@ -407,16 +468,18 @@ int main()
     } 
         
    
-
-    
     // 결과 덤프 ---------------------------------------------------------------
-    int capsule_idx = 0;
+    int capsule_idx = 0;    
+    uint8_t buffer[BUF_SIZE];
+    int cid;
+    int verbose = 1;
     while (!nvme_tcp_txdata.empty()) {
         // ① 첫 word = Capsule Header (CH) + 일부/전체 Payload
         ap_uint<DATA_WIDTH> first = nvme_tcp_txdata.read();
         dump_capsule_header(first, capsule_idx);
         uint8_t TYPE  = first.range(7,0);
         uint8_t PDO   = first.range(31,24);
+        if(TYPE == 0x07) cid = first.range(79,64);
 
         // ② CH 출력 이후 필요 word 수 계산하여 skip
         uint32_t plen_bytes = first.range(63,32).to_uint();
@@ -424,10 +487,33 @@ int main()
         unsigned total_words = (TYPE == 0x1)? 2 : (TYPE == 0x7)? words_needed(plen_bytes - hlen_bytes) + 1 : 1;
         // 첫 word는 이미 소비 → 나머지 word skip
         for (unsigned w = 1; w < total_words && !nvme_tcp_txdata.empty(); ++w){
-            (void)nvme_tcp_txdata.read();
+            ap_uint<DATA_WIDTH> data_packet = nvme_tcp_txdata.read();
             if(w % 16 == 0 || w == (total_words - 1)) printf("[Capsule %d] Packet %d/%d read\n", capsule_idx, w, total_words-1);
+            if(TYPE == 0x07){ // C2HData
+                for(unsigned i = 0; i < 64; ++i) {
+                    buffer[(w-1)*64+i] = data_packet.range(i*8+7, i*8);
+                }
+            }            
         }
         ++capsule_idx;
+        if(verbose && TYPE == 0x07) {
+            if(cid == 6){
+                struct nvme_id_ctrl* id = (struct nvme_id_ctrl*)buffer;
+                parse_id_ctrl(id);
+            }
+            else if(cid == 9) {
+                struct nvme_id_ns* ns = (struct nvme_id_ns*)buffer;
+                parse_id_ns(ns);
+            }
+            else if(cid == 8) {
+                struct id_active_ns_list* lst = (struct id_active_ns_list*)buffer;
+                parse_active_ns(lst);
+            }
+            else if(cid == 10) {
+                struct identify_namespace_descriptor* desc = (struct identify_namespace_descriptor*)buffer;
+                parse_ns_desc(desc, plen_bytes);
+            }        
+        }
     }
 
     return 0;

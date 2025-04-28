@@ -10,12 +10,6 @@ open_solution "solution1"
 set_part {xcu55c-fsvh2892-2L-e}
 create_clock -period 6.66 -name default
 
-#cosim
-csynth_design
-config_compile -pipeline_style flp
-cosim_design -trace_level all -O
-exit
-
 #csim
 csim_design -clean -O
 exit

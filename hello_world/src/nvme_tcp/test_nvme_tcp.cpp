@@ -1,144 +1,434 @@
+// nvme_tcp_testbench_refactored.cpp
+// ------------------------------------------------------------
+// 각 CH‑PSH 쌍을 명령(종류)별 함수로 분리한 테스트벤치 예시.
+// 원본 로직은 건드리지 않고 "무엇을 언제 내보내는지"만 슬림하게
+// 함수로 묶었습니다. 필요하면 더 많은 명령을 같은 패턴으로 추가하세요.
+// ------------------------------------------------------------
+
 #include <stdio.h>
 #include "nvme_tcp_driver_top.hpp"
-#include <iostream>
-#include <fstream>
-#include <vector>
-#include <cstring>    // for memcpy
-#include <cstdint>
 #include <hls_stream.h>
 #include <ap_int.h>
-#define DATA_WIDTH 512
-#define file_path "/home/csl/heejae/Vitis_Accel_Examples/hello_world/src/nvme_tcp/trace.log"
 
-// 테스트 벤치 메인 함수
-int main() {
+#define DATA_WIDTH 512
+
+
+static inline ap_uint<DATA_WIDTH>
+make_capsule_header(ap_uint<8>  TYPE,
+                    ap_uint<8>  FLAGS,
+                    ap_uint<8>  HLEN,
+                    ap_uint<8>  PDO,
+                    ap_uint<32> PLEN)
+{
+    ap_uint<DATA_WIDTH> w = 0;
+    w.range(  7,  0) = TYPE;
+    w.range( 15,  8) = FLAGS;
+    w.range( 23, 16) = HLEN;
+    w.range( 31, 24) = PDO;
+    w.range( 63, 32) = PLEN;
+    return w;                 // 나머지는 0
+}
+
+// ---------------------------------------------------------------------------
+// Fabric 단계 ---------------------------------------------------------------
+// ---------------------------------------------------------------------------
+
+void sendICReq(hls::stream<ap_uint<DATA_WIDTH>>& rx, uint16_t cid)
+{
+    // CH
+    rx.write(make_capsule_header(/*TYPE*/ 0x00, /*FLAGS*/ 0x00,
+                                 /*HLEN*/ 128,  /*PDO*/   0,
+                                 /*PLEN*/ 128));
+    // PSH (내용 없음)
+    rx.write(0);
+}
+
+void sendConnect(hls::stream<ap_uint<DATA_WIDTH>>& rx, uint16_t cid)
+{
+    // CH – NVMe‑oF Connect
+    rx.write(make_capsule_header(/*TYPE*/ 0x04, /*FLAGS*/ 0x40,
+                                 /*HLEN*/ 72,   /*PDO*/  72,
+                                 /*PLEN*/ 1096));
+
+    // PSH – Connect SQE ------------------------------------------------------
+    {
+        ap_uint<DATA_WIDTH> w = 0;
+        const ap_uint<8>  OPCODE   = 0x7F;
+        const ap_uint<8>  SQ_FLAGS = 0x40;  // rsvd bit 6 = 1
+        const ap_uint<16> CID      = cid;
+        const ap_uint<8>  FCTYPE   = 0x01;
+        
+        ap_uint<64> SGL_ADDR    = 0x0;
+        ap_uint<32> SGL_LENGTH  = 1024;
+        ap_uint<8>  SGL_SUBTYPE = 0x00;
+        ap_uint<8>  SGL_TYPE    = 0x00;
+        ap_uint<16> SGL_RSVD    = 0x0000;
+
+        const ap_uint<16> RECFMT = 0;
+        const ap_uint<16> QID    = 0;
+        const ap_uint<16> SQSIZE = 31;
+        const ap_uint<8>  CATTR  = 0;
+        const ap_uint<32> KATO   = 15000;
+
+        w.range(   7,   0) = OPCODE;
+        w.range(  15,   8) = SQ_FLAGS;
+        w.range(  31,  16) = CID;
+        w.range(  39,  32) = FCTYPE;
+        w.range( 255, 192) = SGL_ADDR;
+        w.range( 287, 256) = SGL_LENGTH;
+        w.range( 295, 288) = SGL_SUBTYPE;
+        w.range( 303, 296) = SGL_TYPE;
+        w.range( 319, 304) = SGL_RSVD;
+        w.range( 335, 320) = RECFMT;
+        w.range( 351, 336) = QID;
+        w.range( 367, 352) = SQSIZE;
+        w.range( 375, 368) = CATTR;
+        w.range( 415, 384) = KATO;
+
+        rx.write(w);
+    }
+
+    // DATA ------------------------------------------------------------------
+    {
+        ap_uint<DATA_WIDTH> blk[16] = {0};
+
+        // Host ID (0‑15)
+        const char hostid[] = "ce2}=DO`.$"; // 10 bytes
+        for (int i = 0; i < sizeof(hostid) - 1; ++i) {
+            blk[0].range(i*8+7, i*8) = (ap_uint<8>)hostid[i];
+        }
+        // CNTLID (16‑17) = 0x0001
+        blk[0].range( (16*8)+15, (16*8) ) = (ap_uint<16>)0x0001;
+
+        // SUBNQN (256‑511)
+        const char subnqn[] = "nqn.2025-04.org.snucsl.subsys";
+        for (size_t i = 0; i < sizeof(subnqn)-1; ++i) {
+            int byte_off = 256 + i;
+            int idx      = byte_off / 64;          // 64 bytes per 512‑bit word
+            int bit_off  = (byte_off % 64) * 8;
+            blk[idx].range(bit_off+7, bit_off) = (ap_uint<8>)subnqn[i];
+        }
+
+        // HOSTNQN (512‑777)
+        const char hostnqn[] =
+            "nqn.2014-08.org.nvmexpress:uuid:544d62cd-a4d0-433f-bed9-c56e1cd62654";
+        for (size_t i = 0; i < sizeof(hostnqn)-1; ++i) {
+            int byte_off = 512 + i;
+            int idx      = byte_off / 64;
+            int bit_off  = (byte_off % 64) * 8;
+            blk[idx].range(bit_off+7, bit_off) = (ap_uint<8>)hostnqn[i];
+        }
+
+        for (int i = 0; i < 16; ++i) rx.write(blk[i]);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Property Get/Set -----------------------------------------------------------
+// ---------------------------------------------------------------------------
+
+void sendGetCAP(hls::stream<ap_uint<DATA_WIDTH>>& rx, uint16_t cid)
+{
+    rx.write(make_capsule_header(0x04, 0x00, 72, 0, 72));
+
+    ap_uint<DATA_WIDTH> w = 0;
+    w.range(  7,  0) = 0x7F;      // OPCODE
+    w.range( 15,  8) = 0x40;      // FLAGS
+    w.range( 31, 16) = cid;        // CID
+    w.range( 39, 32) = 4;         // FCTYPE
+    w.range(327,320) = 0x01;      // ATTRIB
+    w.range(383,352) = 0x0;       // OFFSET
+    rx.write(w);
+}
+
+void sendSetCC(hls::stream<ap_uint<DATA_WIDTH>>& rx, uint16_t cid)
+{
+    rx.write(make_capsule_header(0x04, 0x00, 72, 0, 72));
+
+    ap_uint<DATA_WIDTH> w = 0;
+    w.range(  7,  0)  = 0x7F;       // OPCODE
+    w.range( 15,  8)  = 0x40;       // FLAGS
+    w.range( 31, 16)  = cid;         // CID
+    w.range( 39, 32)  = 0;          // FCTYPE
+    w.range(327,320)  = 0;          // ATTRIB
+    w.range(383,352)  = 0x14;       // OFFSET
+    w.range(447,384)  = (ap_uint<64>)0x460001; // VALUE
+    rx.write(w);
+}
+
+void sendGetCSTS(hls::stream<ap_uint<DATA_WIDTH>>& rx, uint16_t cid)
+{
+    rx.write(make_capsule_header(0x04, 0x00, 72, 0, 72));
+
+    ap_uint<DATA_WIDTH> w = 0;
+    w.range(  7,  0) = 0x7F;
+    w.range( 15,  8) = 0x40;
+    w.range( 31, 16) = cid;        // CID
+    w.range( 39, 32) = 4;         // FCTYPE
+    w.range(327,320) = 0x00;      // ATTRIB
+    w.range(383,352) = 0x1c;      // OFFSET
+    rx.write(w);
+}
+
+void sendGetVer(hls::stream<ap_uint<DATA_WIDTH>>& rx, uint16_t cid)
+{
+    rx.write(make_capsule_header(0x04, 0x00, 72, 0, 72));
+
+    ap_uint<DATA_WIDTH> w = 0;
+    w.range(  7,  0) = 0x7F;
+    w.range( 15,  8) = 0x40;
+    w.range( 31, 16) = cid;        // CID
+    w.range( 39, 32) = 4;         // FCTYPE
+    w.range(327,320) = 0x00;      // ATTRIB
+    w.range(383,352) = 0x08;      // OFFSET
+    rx.write(w);
+}
+
+// ---------------------------------------------------------------------------
+// Admin 명령 ---------------------------------------------------------------
+// ---------------------------------------------------------------------------
+
+void sendAdminIdentifyCtrl(hls::stream<ap_uint<DATA_WIDTH>>& rx, uint16_t cid)
+{
+    rx.write(make_capsule_header(0x04, 0x00, 72, 0, 72));
+
+    ap_uint<DATA_WIDTH> w = 0;
+    const ap_uint<8>  OPCODE = 0x06;
+    const ap_uint<8>  FLAGS  = 0x40;
+    const ap_uint<16> CID    = 18;
+    const ap_uint<8>  FCTYPE = 0x00;
+    ap_uint<64> SGL_ADDR   = 0;
+    ap_uint<32> SGL_LENGTH = 4096;
+    w.range(  7,  0) = OPCODE;
+    w.range( 15,  8) = FLAGS;
+    w.range( 31, 16) = cid;
+    w.range( 39, 32) = FCTYPE;
+    w.range(255,192) = SGL_ADDR;
+    w.range(287,256) = SGL_LENGTH;
+    w.range(327,320) = 0x01;   // ATTRIB
+    w.range(383,352) = 0x0;    // OFST
+    rx.write(w);
+}
+
+void sendAdminSetFeaturesNumQueues(hls::stream<ap_uint<DATA_WIDTH>>& rx, uint16_t cid)
+{
+    rx.write(make_capsule_header(0x04, 0x00, 72, 0, 72));
+
+    ap_uint<DATA_WIDTH> w = 0;
+    w.range(  7,  0) = 0x09;    // OPCODE
+    w.range( 15,  8) = 0x40;    // FLAGS
+    w.range( 31, 16) = cid;      // CID
+    w.range( 39, 32) = 0x00;    // FCTYPE
+    // NSID
+    w.range( 71, 40) = 0x0;
+    // SGL
+    w.range(255,192) = (ap_uint<64>)0x0;
+    w.range(287,256) = (ap_uint<32>)0x0;
+    // ATTRIB
+    w.range(327,320) = 0x07;
+    // CDW11 (OFFSET field)
+    w.range(383,352) = 0x004F004F;
+    rx.write(w);
+}
+
+void sendAdminIdentifyActiveNSList(hls::stream<ap_uint<DATA_WIDTH>>& rx, uint16_t cid)
+{
+    rx.write(make_capsule_header(0x04, 0x00, 72, 0, 72));
+
+    ap_uint<DATA_WIDTH> w = 0;
+    w.range(  7,  0) = 0x06;  // OPCODE Identify
+    w.range( 15,  8) = 0x40;
+    w.range( 31, 16) = cid;    // CID
+    w.range( 39, 32) = 0x00;  // FCTYPE
+    w.range(255,192) = (ap_uint<64>)0x0; // SGL_ADDR
+    w.range(287,256) = (ap_uint<32>)4096;// SGL_LENGTH
+    w.range(327,320) = 0x02;  // ATTRIB (CNS=0x02)
+    w.range(383,352) = 0x0;   // OFST
+    rx.write(w);
+}
+
+void sendAdminIdentifyNS(hls::stream<ap_uint<DATA_WIDTH>>& rx, uint16_t cid)
+{
+    rx.write(make_capsule_header(0x04, 0x00, 72, 0, 72));
+
+    ap_uint<DATA_WIDTH> w = 0;
+    w.range(  7,  0) = 0x06;  // OPCODE
+    w.range( 15,  8) = 0x40;
+    w.range( 31, 16) = cid;    // CID
+    w.range( 39, 32) = 0x01;  // FCTYPE (NS page)
+    w.range( 71, 40) = 0x00000001; // NSID
+    w.range(255,192) = (ap_uint<64>)0x0; // SGL_ADDR
+    w.range(287,256) = (ap_uint<32>)4096;// SGL_LENGTH
+    w.range(327,320) = 0x00;  // ATTRIB
+    w.range(383,352) = 0x0;   // OFST
+    rx.write(w);
+}
+
+void sendAdminIdentifyNSDescList(hls::stream<ap_uint<DATA_WIDTH>>& rx, uint16_t cid)
+{
+    rx.write(make_capsule_header(0x04, 0x00, 72, 0, 72));
+
+    ap_uint<DATA_WIDTH> w = 0;
+    w.range(  7,  0) = 0x06;   // OPCODE Identify
+    w.range( 15,  8) = 0x40;
+    w.range( 31, 16) = cid;     // CID
+    w.range( 39, 32) = 0x01;   // FCTYPE
+    w.range( 71, 40) = 0x00000001; // NSID
+    w.range(255,192) = (ap_uint<64>)0x0;
+    w.range(287,256) = (ap_uint<32>)4096;
+    w.range(327,320) = 0x03;   // ATTRIB (descriptor list)
+    w.range(383,352) = 0x0;
+    rx.write(w);
+}
+
+static const char* pdu_name(uint8_t type)
+{
+    switch (type) {
+        case 0x00: return "ICReq";
+        case 0x01: return "ICResp";
+        case 0x02: return "H2CTermReq";
+        case 0x03: return "C2HTermReq";
+        case 0x04: return "CapsuleCmd";
+        case 0x05: return "CapsuleResp";
+        case 0x06: return "H2CData";
+        case 0x07: return "C2HData";
+        case 0x09: return "R2T";
+        case 0x0A: return "KDReq";
+        case 0x0B: return "KDResp";
+        default:   return "Unknown";
+    }
+}
+
+static const char* sct_name(uint8_t sct)
+{
+    switch (sct) {
+        case 0x0: return "Generic";
+        case 0x1: return "Command‑Specific";
+        case 0x2: return "Media/Data";
+        case 0x3: return "Path";
+        default:  return "Reserved";
+    }
+}
+
+
+
+static const char* sc_fabrics_cmd_specific(uint8_t sc)
+{
+    switch (sc) {
+        case 0x0 : return "Success";
+        case 0x1 : return "Invalid Opcode";
+        case 0x2 : return "Invalid Field";
+        case 0xc : return "Command Sequence Error";
+        case 0x80: return "Incompatible Format";
+        case 0x81: return "Controller Busy";
+        case 0x82: return "Connect Invalid Parameters";
+        case 0x83: return "Connect Restart Discovery";
+        case 0x84: return "Connect Invalid Host";
+        case 0x85: return "Invalid Queue Type";
+        case 0x90: return "Discover Restart";
+        case 0x91: return "Authentication Required";
+        default:   return "(Reserved / Transport Specific)";
+    }
+}
+
+static void dump_cqe(const ap_uint<DATA_WIDTH>& first)
+{
+    // PSH : 23 : 08
+    uint64_t frts = first.range(15*8+7, 8*8);   // bytes 15:8
+    uint16_t sqhd = first.range(17*8+7, 16*8);  // bytes 17:16
+    uint16_t cid  = first.range(21*8+7, 20*8);  // bytes 21:20
+    uint16_t sts  = first.range(23*8+7, 22*8);  // bytes 23:22
+
+    // SC : 24:17 (bit)
+    // SCT: 27:25 (bit)
+
+    uint8_t sc  = (sts >> 1) & 0xFF;
+    uint8_t sct = (sts >> 9) & 0x07;
+
+
+    printf("    CQE: FRTS=0x%016llX  SQHD=0x%04X  CID=%u  STS=0x%04X\n",
+           (unsigned long long)frts, sqhd, cid, sts);
+    printf("         Status – SCT:%u(%s)  SC:%u => %s\n",
+           sct, sct_name(sct), sc, sc_fabrics_cmd_specific(sc));
+}
+
+static void dump_capsule_header(const ap_uint<DATA_WIDTH>& first, int idx)
+{
+    uint8_t TYPE  = first.range(7,0);
+    uint8_t FLAGS = first.range(15,8);
+    uint8_t HLEN  = first.range(23,16);
+    uint8_t PDO   = first.range(31,24);
+    uint32_t PLEN = first.range(63,32);
+
+    printf("[Capsule %d] %-11s  TYPE=0x%02X  FLAGS=0x%02X  HLEN=%u  PDO=%u  PLEN=%u\n",
+           idx, pdu_name(TYPE), TYPE, FLAGS, HLEN, PDO, PLEN);
+
+    if (TYPE == 0x05) dump_cqe(first);
+}
+
+static inline unsigned words_needed(uint32_t bytes)
+{
+    // 1 word = 64 B  (512‑bit)
+    return (bytes + 63) / 64;
+}
+
+// ---------------------------------------------------------------------------
+// 메인 ----------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+
+int main()
+{
     hls::stream<ap_uint<DATA_WIDTH>> nvme_tcp_rxdata;
     hls::stream<ap_uint<DATA_WIDTH>> nvme_tcp_txdata;
-    hls::stream<request_packet> nvme_request_stream;
-    hls::stream<completion_packet> nvme_response_stream;
+    hls::stream<request_packet>      nvme_req_stream;
+    hls::stream<completion_packet>   nvme_cpl_stream;
 
-    static nvme_cqe_t admin_cq_base_addr[16];
-    static nvme_sqe_t admin_sq_base_addr[16];
-    static uint32_t   bar_base_address[16];
-    static uint32_t   dbl_base_address[16];
-    static uint64_t   buffer_virtual_address[256];
+    // 테스트 시퀀스 -----------------------------------------------------------
+    sendICReq(nvme_tcp_rxdata, 0); // 0
+    sendConnect(nvme_tcp_rxdata, 1); // 1
+    sendGetCAP(nvme_tcp_rxdata, 2); // 2
+    sendSetCC(nvme_tcp_rxdata, 3); // 3
+    sendGetCSTS(nvme_tcp_rxdata, 4); // 4
+    sendGetVer(nvme_tcp_rxdata, 5); // 5
 
-    // --------------------------------------------------------
-    // trace.log 파일 열어서 64바이트씩 읽어오기
-    // --------------------------------------------------------
-    std::ifstream infile(file_path, std::ios::binary);
-    if(!infile.is_open()){
-        std::cerr << "Failed to open trace.log" << std::endl;
-        return -1;
+    sendAdminIdentifyCtrl(nvme_tcp_rxdata, 6); // 6
+
+    sendAdminSetFeaturesNumQueues(nvme_tcp_rxdata, 7);
+    sendAdminIdentifyActiveNSList(nvme_tcp_rxdata, 8);
+    sendAdminIdentifyNS(nvme_tcp_rxdata, 9);
+    sendAdminIdentifyNSDescList(nvme_tcp_rxdata, 10);
+
+    
+    for (int i = 0; i < 1000; ++i) {
+        nvme_tcp_driver_top(nvme_tcp_rxdata,
+                            nvme_tcp_txdata,
+                            nvme_req_stream,
+                            nvme_cpl_stream);
+    } 
+        
+   
+
+    
+    // 결과 덤프 ---------------------------------------------------------------
+    int capsule_idx = 0;
+    while (!nvme_tcp_txdata.empty()) {
+        // ① 첫 word = Capsule Header (CH) + 일부/전체 Payload
+        ap_uint<DATA_WIDTH> first = nvme_tcp_txdata.read();
+        dump_capsule_header(first, capsule_idx);
+        uint8_t TYPE  = first.range(7,0);
+        uint8_t PDO   = first.range(31,24);
+
+        // ② CH 출력 이후 필요 word 수 계산하여 skip
+        uint32_t plen_bytes = first.range(63,32).to_uint();
+        uint32_t hlen_bytes = first.range(23,16).to_uint();
+        unsigned total_words = (TYPE == 0x1)? 2 : (TYPE == 0x7)? words_needed(plen_bytes - hlen_bytes) + 1 : 1;
+        // 첫 word는 이미 소비 → 나머지 word skip
+        for (unsigned w = 1; w < total_words && !nvme_tcp_txdata.empty(); ++w){
+            (void)nvme_tcp_txdata.read();
+            if(w % 16 == 0 || w == (total_words - 1)) printf("[Capsule %d] Packet %d/%d read\n", capsule_idx, w, total_words-1);
+        }
+        ++capsule_idx;
     }
 
-    // 64바이트 버퍼
-    const size_t chunk_size_bytes = DATA_WIDTH / 8; // 64바이트
-    char buffer[chunk_size_bytes];
-
-    while(true) {
-        infile.read(buffer, chunk_size_bytes);
-        std::streamsize read_size = infile.gcount();
-        
-        if(read_size <= 0) {
-            // 더 이상 읽을 데이터가 없으면 종료
-            break;
-        }
-
-        // 64바이트보다 작게 읽혔을 경우(파일 끝), 남는 부분은 0으로 채운다
-        if(read_size < (std::streamsize)chunk_size_bytes) {
-            std::memset(buffer + read_size, 0, chunk_size_bytes - read_size);
-        }
-
-        // ap_uint<512>에 복사
-        ap_uint<DATA_WIDTH> data_512b = 0;
-        // NOTE: ap_uint<>은 bit 단위로 접근이 복잡하므로, 
-        //       간단히 바이트 단위로 reinterpret_cast 후 memcpy 하는 경우가 많습니다.
-        //       여기서는 정석적으로 loop로 bit shift를 해도 되고, 아래처럼 union을 써도 됩니다.
-        
-        // 방법1) 바이트 단위 for-loop로 직접 대입
-        for(int i = 0; i < (int)chunk_size_bytes; i++) {
-            // buffer[i]를 data_512b의 (i*8 ~ i*8+7) 비트 구간에 넣기
-            ap_uint<8> temp = (unsigned char) buffer[i];
-            data_512b.range((i+1)*8 -1, i*8) = temp;
-        }
-
-        // 스트림에 write
-        nvme_tcp_rxdata.write(data_512b);
-
-        // DUT 호출
-        nvme_tcp_driver_top(
-            nvme_tcp_rxdata,
-            nvme_tcp_txdata,
-            admin_cq_base_addr,
-            admin_sq_base_addr,
-            bar_base_address,
-            dbl_base_address,
-            /* buffer_physical_address */ 0ULL,
-            buffer_virtual_address,
-            nvme_request_stream,
-            nvme_response_stream
-        );
-
-        // --------------------------------------------------------
-        // 3) DUT 동작 후: nvme_request_stream에서 request_packet 확인
-        //    (실제 NVMe command가 잘 올라왔는지 보기 위한 예)
-        // --------------------------------------------------------
-        while(!nvme_request_stream.empty()) {
-            request_packet req = nvme_request_stream.read();
-            std::cout << "[REQUEST] "
-                      << "CMD ID=" << req.dw0.id
-                      << ", OPC=" << req.dw0.opc
-                      << ", SQID=" << req.dw0.sqid
-                      << ", NLB=" << req.dw2.nlb
-                      << ", SLBA=" << ( (uint64_t)req.dw2.slba << 32 | req.dw1 )
-                      << std::endl;
-        }
-
-        // 여기서는 예시로 “한 번 읽을 때마다 response 해보자”라고 가정
-        // 실제로는 NVMe 디바이스 측에서 completion이 오면 넣어주는 흐름이겠지만
-        // 우리가 테스트이므로 임의의 completion_packet을 만들어 스트림에 넣어봄
-        completion_packet cpl;
-        cpl.dw0.id = 0xABCD;   // 임의의 값
-        cpl.dw0.sc = 0x00;     // status code
-        cpl.dw0.sct = 0x00;    // status code type
-        nvme_response_stream.write(cpl);
-
-        // 다시 DUT 호출 -> response를 처리하여 txdata가 나오는지 확인
-        nvme_tcp_driver_top(
-            nvme_tcp_rxdata,
-            nvme_tcp_txdata,
-            admin_cq_base_addr,
-            admin_sq_base_addr,
-            bar_base_address,
-            dbl_base_address,
-            /* buffer_physical_address */ 0ULL,
-            buffer_virtual_address,
-            nvme_request_stream,
-            nvme_response_stream
-        );
-
-        // --------------------------------------------------------
-        // 4) DUT 동작 후: nvme_tcp_txdata에서 데이터 확인
-        //    (completion_packet이 변환되어 전송되었는지 확인)
-        // --------------------------------------------------------
-        while(!nvme_tcp_txdata.empty()) {
-            ap_uint<DATA_WIDTH> tx_data = nvme_tcp_txdata.read();
-
-            // 여기서는 단순히 64바이트를 16진수로 찍거나, 원하는 포맷으로 확인
-            // 예시로 몇 바이트만 찍어보기
-            std::cout << "[TXDATA] 64B CHUNK: ";
-            for(int i = 0; i < (int)chunk_size_bytes; i++) {
-                unsigned char c = (unsigned char)tx_data.range((i+1)*8 -1, i*8).to_uint();
-                std::cout << std::hex << (int)c << " ";
-            }
-            std::cout << std::dec << std::endl;
-        }
-    }
-
-    infile.close();
-
-    std::cout << "Testbench Done." << std::endl;
     return 0;
-
 }

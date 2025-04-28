@@ -1,7 +1,10 @@
-#include <hls_stream.h>
-#include <ap_int.h>
-#include <stdint.h>
-#define DATA_WIDTH 512
+#include "nvme_tcp.hpp"
+#include "nvme_tcp_admin.hpp"
+
+#ifndef NVME_TCP_DRIVER_TOP_HPP
+#define NVME_TCP_DRIVER_TOP_HPP
+//#define DISCOVERY_NQN "nqn.2014-08.org.nvmexpress.discovery"
+//#define SUBSYS_NQN "nqn.2025-04.org.snucsl.subsys"
 
 
 typedef struct _nvme_cqe_t
@@ -24,6 +27,7 @@ typedef struct _nvme_cqe_t
     uint32_t reserved   :4;     // Reserved
 
 } nvme_cqe_t;
+
 
 typedef struct _nvme_sqe_t
 {
@@ -49,42 +53,15 @@ typedef struct _nvme_sqe_t
 
 } nvme_sqe_t;
 
-struct request_packet {
-    union {
-        struct {
-            uint16_t id;         ///< command ID
-            uint32_t dev : 4;    ///< device
-            uint32_t sqid : 4;   ///< SQ ID
-            uint32_t flags : 4;  ///< flags
-            uint32_t opc : 4;     ///< opcode (0x01=Write, 0x02=Read, etc.)
-        };
-        uint32_t raw;
-    } dw0;
 
-    uint32_t dw1; /// slba[31:0]
-    
-    union {
-        struct {
-            uint32_t nlb : 16;    ///< Number of Logical Blocks
-            uint32_t slba : 16;   /// slba[47:32]
-        };
-        uint32_t raw;
-    } dw2;
 
-    uint64_t dw3; /// buffer address
-};
 
-struct completion_packet {
-    union {
-        struct {
-            uint16_t id;         ///< command ID
-            uint32_t reserved1 : 4;  
-            uint32_t sct : 4;  ///< Status Code Type
-            uint32_t sc : 8;     ///< Status Code
-        };
-        uint32_t raw;
-    } dw0;
-};
+
+
+/*
+ * Initiator Status
+ */
+#define MAX_SESSION_ID 16
 
 extern "C"{
 void nvme_tcp_driver_top(
@@ -92,22 +69,13 @@ void nvme_tcp_driver_top(
     hls::stream<ap_uint<DATA_WIDTH>> &nvme_tcp_rxdata, // receive
     hls::stream<ap_uint<DATA_WIDTH>> &nvme_tcp_txdata, // transmit
 
-    // admin queue address
-    nvme_cqe_t *admin_cq_base_addr, // CQ base address
-    nvme_sqe_t *admin_sq_base_addr, // SQ base address
-     
-    // NVMe SSD Bar addr
-    uint32_t *bar_base_address, // Doorbell base address
-
-    // admin queue doorbell base addr
-    uint32_t *dbl_base_address, // Doorbell base address
-
-    // for identify command
-    uint64_t buffer_physical_address,
-    uint64_t* buffer_virtual_address,
-
     // for nvme driver
     hls::stream<struct request_packet> &nvme_request_stream,
     hls::stream<struct completion_packet> &nvme_response_stream
 );
 }
+
+#endif
+
+
+

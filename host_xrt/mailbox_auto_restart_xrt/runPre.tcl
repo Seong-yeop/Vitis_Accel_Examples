@@ -1,2 +1,0 @@
-config_interface -s_axilite_mailbox both
-config_interface -s_axilite_auto_restart_counter 1

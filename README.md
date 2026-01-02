@@ -1,27 +1,143 @@
-<table width="100%">
- <tr width="100%">
-    <td align="center"><img src="https://raw.githubusercontent.com/Xilinx/Image-Collateral/main/xilinx-logo.png" width="30%"/><h1>Vitis™ Data Center Acceleration Examples</h1>
-    </td>
- </tr>
-</table>
+# NVMe Driver HLS Implementation
 
-Welcome to the Vitis Data Center Acceleration Examples repository. This repository contains examples to showcase various features of the Vitis™ tools targeting Alveo Data Center platforms. It is expected that users have gone through the [Vitis HLS Introductory Examples](https://github.com/Xilinx/Vitis-HLS-Introductory-Examples) and [Vitis Tutorials](https://github.com/Xilinx/Vitis-Tutorials) and have developed a basic understanding of the tools and the programming model. This repository illustrates specific scenarios related to host code and kernel programming through small working examples. The intention is for users to be able to use these working examples as a reference while developing their own accelerator application based on AMD Alveo platforms. 
+A Vitis HLS implementation of an FPGA-based NVMe driver for hardware-accelerated I/O operations on NVMe SSDs using AMD Alveo accelerator cards.
 
-## Brief description of the examples
-| Example | Description |
-|-|-|
-| host_xrt | XRT Native APIs examples for optimal host-kernel interaction with AMD Devices |
-| performance |Examples that cover performance related aspects for kernel-to-memory, host-to-kernel and host-to-memory |
-| rtl_kernels |RTL Kernels based examples covering mix of RTL and HLS C++ kernels and hardware debug in Vitis flow |
-| sys_opt | Examples covering multiple devices, multiple processes and kernel swap use cases |
+## Architecture Overview
 
-For more comprehensive documentation, <a href="http://xilinx.github.io/Vitis_Accel_Examples/"><img src="https://img.shields.io/badge/click-here-green?style=plastic&logo=appveyor"/></a>
+```
+                    +------------------+
+  Request Packet -->| nvme_io_cmd_gen  |
+                    +--------+---------+
+                             |
+                             v
+                    +------------------+
+                    |  nvme_mgmt_prp   |  (PRP List Management)
+                    +--------+---------+
+                             |
+                             v
+                    +------------------+
+                    |nvme_io_sqe_dbl   |
+                    |     _write       |---> Doorbell Write
+                    +--------+---------+
+                             |
+                             v
+                    +------------------+
+                    |    sq_writer     |---> SQ Entry Write
+                    +------------------+
 
-## NOTE
-Software Emulation is not supported for the examples and will be deprecated in the tool in 2024.2. This feature will be removed in the subsequent release.
+                    +------------------+
+  CQ Polling <------|nvme_process_cpl  |<--- CQ Entry Read
+                    +--------+---------+
+                             |
+                             v
+                    +------------------+
+                    |   mgmt_table     |  (Command Info Management)
+                    +------------------+
+```
 
-For more details, please visit https://support.xilinx.com/s/article/000036790?language=en_US
+## Module Description
 
-<p class="sphinxhide" align="center"><sub>Copyright © 2020–2023 Advanced Micro Devices, Inc</sub></p>
+### Top Module
+- **nvme_driver_top.cpp**: Top-level module connecting all submodules using DATAFLOW
 
-<p class="sphinxhide" align="center"><sup><a href="https://www.amd.com/en/corporate/copyright">Terms and Conditions</a></sup></p>
+### Submit Path
+| Module | File | Description |
+|--------|------|-------------|
+| `nvme_io_cmd_gen` | nvme_submit_cmd.cpp | Converts request packets to NVMe I/O commands |
+| `nvme_mgmt_prp` | nvme_submit_cmd.cpp | Manages PRP (Physical Region Page) lists |
+| `nvme_io_sqe_dbl_write` | nvme_submit_cmd.cpp | Writes commands to SQ and updates doorbell |
+| `sq_writer` | nvme_submit_cmd.cpp | SQ memory writer (separated for pipeline optimization) |
+
+### Completion Path
+| Module | File | Description |
+|--------|------|-------------|
+| `nvme_process_cpl` | nvme_process_cpl.cpp | CQ polling and completion processing |
+| `mgmt_table` | nvme_io_mgmt_table.cpp | Command ID-based command info table management |
+
+## Data Structures
+
+### NVMe I/O Command (64 bytes)
+```cpp
+typedef struct __attribute__((packed, aligned(64))) _nvme_io_command {
+    uint8_t  opc;      // Opcode (0x01=Write, 0x02=Read)
+    uint8_t  fuse;     // Fuse
+    uint16_t cid;      // Command ID
+    uint32_t nsid;     // Namespace ID
+    uint64_t mptr;     // Metadata Pointer
+    uint64_t prp1;     // PRP Entry 1
+    uint64_t prp2;     // PRP Entry 2
+    uint32_t cdw10-15; // Command specific DWORDs
+} nvme_io_command_t;
+```
+
+### NVMe Completion Queue Entry (16 bytes)
+```cpp
+typedef struct __attribute__((packed, aligned(64))) _nvme_cqe_t {
+    uint32_t dw0;           // Command Specific
+    uint32_t dw1;           // Reserved
+    uint16_t sq_head;       // SQ Head Pointer
+    uint16_t sq_identifier; // SQ Identifier
+    uint16_t cid;           // Command ID
+    uint32_t phase_tag:1;   // Phase Tag
+    uint32_t status_code:8; // Status Code
+    ...
+} nvme_cqe_t;
+```
+
+## HLS Optimization Pragmas
+
+| Pragma | Purpose |
+|--------|---------|
+| `#pragma HLS DATAFLOW` | Enables pipeline parallel execution between modules |
+| `#pragma HLS PIPELINE II=1` | Processes new input every clock cycle |
+| `#pragma HLS STREAM depth=512` | FIFO-based data streaming |
+| `#pragma HLS DEPENDENCE` | Removes false dependencies |
+| `#pragma HLS bind_storage type=RAM_T2P` | Uses True Dual-Port BRAM |
+
+## Interface Configuration
+
+| Port | Interface | Bundle | Description |
+|------|-----------|--------|-------------|
+| io_cq_base_addr | m_axi | gmem0 | CQ memory access |
+| io_sq_base_addr | m_axi | gmem1 | SQ memory access (burst write enabled) |
+| dbl_base_address | m_axi | gmem2/3 | Doorbell register access |
+| start/done | s_axilite | - | Control registers |
+
+## Build
+
+```bash
+# HLS Synthesis
+cd nvme_driver
+source /path/to/Vitis/settings64.sh
+make all TARGET=hw PLATFORM=<platform>
+```
+
+## Queue Parameters
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `IO_QUEUE_MAX_DEPTH` | 128 | Maximum I/O Queue depth |
+| `IO_QUEUE_MAX_NUM` | 4 | Maximum number of queues |
+| `MAX_CMD_INFO_TBL_SIZE` | 256 | Command info table size |
+
+## File Structure
+
+```
+nvme_driver/
+├── src/
+│   ├── nvme_driver_top.hpp      # Header and data structure definitions
+│   ├── nvme_driver_top.cpp      # Top module
+│   ├── nvme_submit_cmd.cpp      # Submit path modules
+│   ├── nvme_process_cpl.cpp     # Completion path modules
+│   ├── nvme_io_mgmt_table.cpp   # Command info table management
+│   ├── packet_generator.cpp     # Test packet generator
+│   ├── host.cpp                 # Host application
+│   └── test_*.cpp               # Testbench files
+├── Makefile
+└── README.md
+```
+
+## Target Platform
+
+- AMD Alveo U55C (xcu55c-fsvh2892-2L-e)
+- Clock: 150 MHz (6.66ns period)

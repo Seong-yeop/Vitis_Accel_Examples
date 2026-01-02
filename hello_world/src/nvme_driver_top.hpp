@@ -24,7 +24,7 @@
 #define MAX_CMD_INFO_TBL_SIZE 256
 
 // NVMe I/O command
-typedef struct _nvme_io_command
+typedef struct __attribute__((packed, aligned(64))) _nvme_io_command
 {
     // -- DW0 --
     uint8_t  opc;         ///< opcode (0x01=Write, 0x02=Read, etc.)
@@ -74,7 +74,7 @@ typedef struct _nvme_io_command
 } nvme_io_command_t;
 
 
-typedef struct _nvme_cqe_t
+typedef struct __attribute__((packed, aligned(64))) _nvme_cqe_t
 {
     // -- DW0 --
     uint32_t dw0; // Command Specific

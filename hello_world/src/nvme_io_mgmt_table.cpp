@@ -106,11 +106,12 @@ void mgmt_table(
     hls::stream<uint32_t> &sq_head_stream_read
 ) {
     #pragma HLS INLINE off
+    #pragma HLS PIPELINE II=1
     
     static uint32_t sq_head = 0;
     static uint32_t pre_sq_head = 0;
     static cmd_info cmd_info_tbl[MAX_CMD_INFO_TBL_SIZE];
-    #pragma HLS bind_storage variable=cmd_info_tbl type=RAM_2P impl=BRAM
+    #pragma HLS bind_storage variable=cmd_info_tbl type=RAM_T2P impl=BRAM
 
     if (!submit_in_req.empty() && !submit_out_resp.full()) {
         struct mgmt_table_req req = submit_in_req.read();
@@ -121,7 +122,7 @@ void mgmt_table(
         submit_out_resp.write(resp);
     }
 
-    if (!cpl_in_req.empty() && !cpl_out_resp.full()) {
+    if (!cpl_in_req.empty()) {
         struct mgmt_table_req req = cpl_in_req.read();
         struct mgmt_table_resp resp;
         resp.rdata = cmd_info_tbl[req.cid % IO_QUEUE_MAX_DEPTH];

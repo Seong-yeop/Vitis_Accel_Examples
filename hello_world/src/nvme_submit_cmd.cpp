@@ -12,6 +12,8 @@ void nvme_io_cmd_gen(
 )
 {
     #pragma HLS INLINE off
+    #pragma HLS PIPELINE II=1
+
     if (!request_packet_stream.empty()) 
     {
         struct request_packet req = request_packet_stream.read();
@@ -58,8 +60,11 @@ void nvme_mgmt_prp(
     uint64_t* prp2_virtual_address,
     hls::stream<nvme_io_command_t> &nvme_io_command_stream
 ){
-    static int entry = 0;
     #pragma HLS INLINE off
+    #pragma HLS PIPELINE II=1
+
+    static int entry = 0;
+    
     if(!nvme_prp_req_stream.empty()){
         nvme_io_command_t cmd = nvme_prp_req_stream.read();
         if(cmd.cdw12 == 0){
@@ -71,7 +76,9 @@ void nvme_mgmt_prp(
         else{
             cmd.prp2 = prp2_physical_address + (entry * 0x1000);
             // #pragma HLS PIPELINE II=1
-            for(int i = 0; i < cmd.cdw12; i++){
+            // for(int i = 0; i < cmd.cdw12; i++){
+            for(int i = 0; i < 32; i++){
+                #pragma HLS UNROLL factor=32
                 *(&prp2_virtual_address[entry * 512 + i]) = cmd.prp1 + ((i+1) * 0x1000);
             }
             entry = (entry + 1) % IO_QUEUE_MAX_DEPTH;
@@ -81,23 +88,25 @@ void nvme_mgmt_prp(
 }
 
 void nvme_io_sqe_dbl_write(
-    nvme_io_command_t *io_sq_base_address,
     uint32_t *dbl_base_address,
     // uint32_t &sq_tail,
     hls::stream<nvme_io_command_t> &nvme_io_command_stream,
     hls::stream<struct mgmt_table_req> &submit_in_req,
     hls::stream<struct mgmt_table_resp> &submit_out_resp,
     hls::stream<uint32_t> &nvme_cq_polling_stream,
-    hls::stream<uint32_t> &sq_head_stream_read
+    hls::stream<uint32_t> &sq_head_stream_read,
+    hls::stream<nvme_io_command_t>& sq_write_stream,
+    hls::stream<uint32_t>& sq_idx_stream
 ) 
 {
-#pragma HLS INLINE off
-#pragma HLS INTERFACE ap_ctrl_none port=return
+    #pragma HLS INLINE off
+    #pragma HLS PIPELINE II=1
+
 
     enum fsm_state {IDLE, CHECK_QUEUE_FULL, READ_SQ_HEAD, SEND_REQ, WAIT_RESP, WRITE_MEM, SEND_CQ_POLL};
 
     static fsm_state state = IDLE;
-#pragma HLS RESET variable=state
+    #pragma HLS RESET variable=state
 
     static nvme_io_command_t cmd;
     static struct mgmt_table_req req;
@@ -158,12 +167,16 @@ void nvme_io_sqe_dbl_write(
             break;
 
         case WRITE_MEM:
-            *(&io_sq_base_address[sq_tail]) = cmd;
+            // *(&io_sq_base_address[sq_tail]) = cmd;
+            sq_write_stream.write(cmd);
+            sq_idx_stream.write(sq_tail);
             sq_tail = (sq_tail + 1) % IO_QUEUE_MAX_DEPTH;
             dbl_base_address[2] = sq_tail;
 
             state = SEND_CQ_POLL;
             break;
+
+
         
         case SEND_CQ_POLL:
             if (!nvme_cq_polling_stream.full()) {
@@ -172,6 +185,26 @@ void nvme_io_sqe_dbl_write(
             }
             break;
     }
+}
+
+
+
+void sq_writer(
+    nvme_io_command_t *io_sq_base_address,
+    hls::stream<nvme_io_command_t>& sq_write_stream,
+    hls::stream<uint32_t>& sq_idx_stream
+)
+{
+    #pragma HLS INLINE off
+    #pragma HLS PIPELINE II=1
+    #pragma HLS DEPENDENCE variable=io_sq_base_address type=inter dependent=false
+
+    static ap_uint<32> index = 0;
+    if (!sq_write_stream.empty() && !sq_idx_stream.empty()) {
+        nvme_io_command_t cmd = sq_write_stream.read();
+        uint32_t idx = sq_idx_stream.read();
+        io_sq_base_address[idx] = cmd;
+    }   
 }
 
 void nvme_io_submit(
@@ -189,12 +222,18 @@ void nvme_io_submit(
     hls::stream<uint32_t> &sq_head_stream_read
 )
 {
-    #pragma HLS INLINE 
+    #pragma HLS INLINE
+    #pragma HLS DATAFLOW disable_start_propagation
 
     static hls::stream<nvme_io_command_t> nvme_prp_req_stream;
     #pragma HLS STREAM variable=nvme_prp_req_stream depth=512
     static hls::stream<nvme_io_command_t> nvme_io_command_stream;
     #pragma HLS STREAM variable=nvme_io_command_stream depth=512
+
+    static hls::stream<nvme_io_command_t> sq_write_stream;
+    #pragma HLS STREAM variable=sq_write_stream depth=512
+    static hls::stream<uint32_t> sq_idx_stream;
+    #pragma HLS STREAM variable=sq_idx_stream depth=512
 
     nvme_io_cmd_gen(
         request_packet_stream,
@@ -209,13 +248,20 @@ void nvme_io_submit(
     );
 
     nvme_io_sqe_dbl_write(
-        io_sq_base_address,
         dbl_base_address,
         // sq_tail,
         nvme_io_command_stream,
         submit_in_req,
         submit_out_resp,
         nvme_cq_polling_stream,
-        sq_head_stream_read
+        sq_head_stream_read,
+        sq_write_stream,
+        sq_idx_stream
+    );
+
+    sq_writer(
+        io_sq_base_address,
+        sq_write_stream,
+        sq_idx_stream
     );
 }

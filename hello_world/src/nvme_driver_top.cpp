@@ -30,7 +30,11 @@ extern "C" {
         #pragma HLS INTERFACE ap_ctrl_none port=return
 
         #pragma HLS INTERFACE m_axi port=io_cq_base_addr offset=slave bundle=gmem0
-        #pragma HLS INTERFACE m_axi port=io_sq_base_addr offset=slave bundle=gmem1
+        #pragma HLS INTERFACE m_axi port=io_sq_base_addr offset=slave bundle=gmem1 \
+                    num_write_outstanding=16 max_write_burst_length=16
+        #pragma HLS DEPENDENCE variable=io_sq_base_addr inter false
+
+
         #pragma HLS INTERFACE m_axi port=dbl_base_address offset=slave bundle=gmem2
         #pragma HLS INTERFACE m_axi port=dbl_base_address2 offset=slave bundle=gmem3
         #pragma HLS INTERFACE m_axi port=buffer_base_address offset=slave bundle=gmem4
@@ -38,8 +42,6 @@ extern "C" {
         #pragma HLS INTERFACE s_axilite port=start 
         #pragma HLS INTERFACE s_axilite port=done 
         #pragma HLS INTERFACE s_axilite port=done_ack 
-
-        #pragma HLS INTERFACE m_axi port=request_packet_stream
 
         static hls::stream<struct mgmt_table_req> submit_in_req("submit_in_req");
         #pragma HLS STREAM variable=submit_in_req depth=512

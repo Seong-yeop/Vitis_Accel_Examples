@@ -15,10 +15,10 @@ void nvme_process_cpl(
     uint32_t delay_cycles
 ) 
 {
-    #pragma HLS INTERFACE mode=m_axi port=dbl_base_address depth=512
+    #pragma HLS INLINE off
+    #pragma HLS PIPELINE II=1
 
-    // #pragma HLS PIPELINE II=1
-    enum class cq_state {IDLE, READ_ENTRY, DELAY, UPDATE_SQ_HEAD, UPDATE_CQ_HEAD, COMPLETION, WAIT_RESP, SEND_REQ};
+    enum class cq_state {IDLE, READ_ENTRY, CHECK_PHASE, DELAY, UPDATE_SQ_HEAD, UPDATE_CQ_HEAD, COMPLETION, WAIT_RESP, SEND_REQ};
 
     static uint32_t cq_head = 0; // CQ Head
     static uint8_t cq_phase = 0; // CQ Phase   
@@ -26,6 +26,7 @@ void nvme_process_cpl(
     static uint32_t delay_counter = 0;
     
     static nvme_cqe_t cqe;
+    #pragma HLS DEPENDENCE variable=cqe type=inter dependent=false
     static struct mgmt_table_req req;
     static struct mgmt_table_resp resp;
 
@@ -46,14 +47,27 @@ void nvme_process_cpl(
                 }
             break;
 
+        // case cq_state::READ_ENTRY:
+        //     cqe = io_cq_base_addr[cq_head];
+        //     // Check phase bit
+        //     if (cqe.phase_tag == cq_phase) {
+        //         state = cq_state::DELAY;
+        //         break;
+        //     }
+        //     state = cq_state::UPDATE_CQ_HEAD;
+        //     break;
         case cq_state::READ_ENTRY:
-            cqe = io_cq_base_addr[cq_head];
-            // Check phase bit
+            cqe = io_cq_base_addr[cq_head];  // 메모리 읽기만
+            state = cq_state::CHECK_PHASE;
+            break;
+
+
+        case cq_state::CHECK_PHASE:          // 새로운 상태
             if (cqe.phase_tag == cq_phase) {
                 state = cq_state::DELAY;
-                break;
+            } else {
+                state = cq_state::UPDATE_CQ_HEAD;
             }
-            state = cq_state::UPDATE_CQ_HEAD;
             break;
 
         case cq_state::DELAY:
